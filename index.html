@@ -101,13 +101,15 @@ async function procesarImagen(file) {
         })
       });
       const data = await res.json();
+      if(data.error){set({error:"Error Gemini: "+data.error.message,manualMode:true,loading:false});return;}
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text||"";
+      if(!text){set({error:"Gemini no respondio. Intenta con otra foto.",manualMode:true,loading:false});return;}
       const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
       const filled = {};
       PLACA_FIELDS.forEach(f=>{ filled[f.key]=parsed[f.key]||""; });
       set({placaData:filled, placaOk:true, manualMode:false, loading:false});
     } catch(err) {
-      set({error:"No se pudo leer la placa. Ingresa los datos a mano.", manualMode:true, loading:false});
+      set({error:"Error: "+err.message,manualMode:true,loading:false});
     }
   };
   reader.readAsDataURL(file);
