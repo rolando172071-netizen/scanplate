@@ -24,439 +24,257 @@
   </style>
 </head>
 <body>
-
 <div id="app"></div>
-
 <script>
-// ═══════════════════════════════════════════════
-// CONFIGURACIÓN
-// ═══════════════════════════════════════════════
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec";
-const STORAGE_KEY = "scanplate_v4";
-const ANTHROPIC_API_KEY = ""; // Pega aquí tu API key de Claude si tienes Pro
 
-const SYSTEM_PROMPT = `Eres un experto técnico en equipos industriales. Analiza la imagen de una placa de datos (nameplate) de un equipo industrial y extrae todos los datos visibles.
-Devuelve ÚNICAMENTE un objeto JSON válido con estos campos (usa null si no aplica o no es visible):
-{"tipo_equipo":"Motor eléctrico|Servomotor|Sensor|Variador|Otro","marca":"","modelo":"","numero_serie":"","potencia":"","voltaje":"","amperaje":"","rpm":"","frecuencia":"","factor_potencia":"","proteccion_ip":"","clase_aislamiento":"","fabricacion":"","otros":""}
-No incluyas texto adicional, solo el JSON.`;
+const GEMINI_KEY = "AIzaSyD-xsjKnCSwSsUR-yP2AMRkjjvZG2VzIbE";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + GEMINI_KEY;
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec";
+const STORAGE_KEY = "scanplate_v5";
+
+const PROMPT = "Eres un experto tecnico en equipos industriales. Analiza esta imagen de una placa de datos y extrae todos los datos visibles. Devuelve UNICAMENTE un objeto JSON valido con estos campos exactos (usa null si no aplica): {\"tipo_equipo\":\"Motor electrico|Servomotor|Sensor|Variador|Otro\",\"marca\":\"\",\"modelo\":\"\",\"numero_serie\":\"\",\"potencia\":\"\",\"voltaje\":\"\",\"amperaje\":\"\",\"rpm\":\"\",\"frecuencia\":\"\",\"factor_potencia\":\"\",\"proteccion_ip\":\"\",\"clase_aislamiento\":\"\",\"fabricacion\":\"\",\"otros\":\"\"} No incluyas texto adicional, solo el JSON puro.";
 
 const MANUAL_FIELDS = [
-  { key: "codigo_sap", label: "Código SAP", placeholder: "Ej: SAP-001234" },
-  { key: "funcion", label: "Función del Equipo", placeholder: "Ej: Bomba de enfriamiento circuito primario" },
-  { key: "maquina", label: "Máquina", placeholder: "Ej: Extrusora #3" },
-  { key: "linea", label: "Línea de Producción", placeholder: "Ej: Línea 1" },
+  { key:"codigo_sap",  label:"Código SAP",          placeholder:"Ej: SAP-001234" },
+  { key:"funcion",     label:"Función del Equipo",   placeholder:"Ej: Bomba de enfriamiento" },
+  { key:"maquina",     label:"Máquina",              placeholder:"Ej: Extrusora #3" },
+  { key:"linea",       label:"Línea de Producción",  placeholder:"Ej: Línea 1" },
 ];
 
 const PLACA_FIELDS = [
-  { key: "tipo_equipo", label: "Tipo de Equipo", placeholder: "Motor / Servo / Sensor..." },
-  { key: "marca", label: "Marca", placeholder: "Ej: Siemens" },
-  { key: "modelo", label: "Modelo", placeholder: "Ej: 1LE0001" },
-  { key: "numero_serie", label: "N° Serie", placeholder: "Ej: A1B2C3D4" },
-  { key: "potencia", label: "Potencia (HP/kW)", placeholder: "Ej: 5.5 kW" },
-  { key: "voltaje", label: "Voltaje (V)", placeholder: "Ej: 220/380V" },
-  { key: "amperaje", label: "Amperaje (A)", placeholder: "Ej: 12.5 A" },
-  { key: "rpm", label: "RPM", placeholder: "Ej: 1750" },
-  { key: "frecuencia", label: "Frecuencia (Hz)", placeholder: "Ej: 60 Hz" },
-  { key: "factor_potencia", label: "Factor de Potencia", placeholder: "Ej: 0.85" },
-  { key: "proteccion_ip", label: "Protección IP", placeholder: "Ej: IP55" },
-  { key: "clase_aislamiento", label: "Clase Aislamiento", placeholder: "Ej: Clase F" },
-  { key: "fabricacion", label: "Año Fabricación", placeholder: "Ej: 2018" },
-  { key: "otros", label: "Otros Datos", placeholder: "Cualquier dato adicional..." },
+  { key:"tipo_equipo",       label:"Tipo de Equipo",     placeholder:"Motor / Servo / Sensor..." },
+  { key:"marca",             label:"Marca",              placeholder:"Ej: Siemens" },
+  { key:"modelo",            label:"Modelo",             placeholder:"Ej: 1LE0001" },
+  { key:"numero_serie",      label:"N° Serie",           placeholder:"Ej: A1B2C3D4" },
+  { key:"potencia",          label:"Potencia (HP/kW)",   placeholder:"Ej: 5.5 kW" },
+  { key:"voltaje",           label:"Voltaje (V)",        placeholder:"Ej: 220/380V" },
+  { key:"amperaje",          label:"Amperaje (A)",       placeholder:"Ej: 12.5 A" },
+  { key:"rpm",               label:"RPM",                placeholder:"Ej: 1750" },
+  { key:"frecuencia",        label:"Frecuencia (Hz)",    placeholder:"Ej: 60 Hz" },
+  { key:"factor_potencia",   label:"Factor de Potencia", placeholder:"Ej: 0.85" },
+  { key:"proteccion_ip",     label:"Protección IP",      placeholder:"Ej: IP55" },
+  { key:"clase_aislamiento", label:"Clase Aislamiento",  placeholder:"Ej: Clase F" },
+  { key:"fabricacion",       label:"Año Fabricación",    placeholder:"Ej: 2018" },
+  { key:"otros",             label:"Otros Datos",        placeholder:"Cualquier dato adicional..." },
 ];
 
-// ═══════════════════════════════════════════════
-// ESTADO GLOBAL
-// ═══════════════════════════════════════════════
-let state = {
-  equipos: [],
-  activeTab: "scan",
-  loading: false,
-  preview: null,
-  error: null,
-  manualMode: false,
-  placaEscaneada: false,
-  editingRow: null,
-  manualData: {},
-  placaData: {},
-  syncStatus: {},
+function emptyM() { return MANUAL_FIELDS.reduce((a,f)=>({...a,[f.key]:""}),{}); }
+function emptyP() { return PLACA_FIELDS.reduce((a,f)=>({...a,[f.key]:""}),{}); }
+
+let S = {
+  equipos:[], activeTab:"scan", loading:false, preview:null,
+  error:null, manualMode:false, placaOk:false, editingRow:null,
+  manualData:emptyM(), placaData:emptyP(), sync:{},
 };
 
-// Cargar desde localStorage
-try {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) state.equipos = JSON.parse(saved);
-} catch(e) {}
+try { const s=localStorage.getItem(STORAGE_KEY); if(s) S.equipos=JSON.parse(s); } catch(e){}
 
-MANUAL_FIELDS.forEach(f => state.manualData[f.key] = "");
-PLACA_FIELDS.forEach(f => state.placaData[f.key] = "");
-
-// ═══════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════
-function saveLocal() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.equipos.map(e => ({...e, _imagen: undefined}))));
-  } catch(e) {}
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S.equipos.map(e=>({...e,_img:undefined})))); } catch(e){}
 }
 
-function render() {
-  document.getElementById("app").innerHTML = buildApp();
-  attachEvents();
+function x(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-function setState(updates) {
-  Object.assign(state, updates);
-  render();
-}
+function set(u) { Object.assign(S,u); render(); }
+function render() { document.getElementById("app").innerHTML = ui(); }
 
-// ═══════════════════════════════════════════════
-// SYNC GOOGLE SHEETS
-// ═══════════════════════════════════════════════
-async function syncToSheets(entry) {
-  if (!SHEETS_URL) return;
-  state.syncStatus[entry._id] = "syncing";
-  render();
-  try {
-    const row = { fecha: entry._fecha };
-    MANUAL_FIELDS.forEach(f => row[f.key] = entry[f.key] || "");
-    PLACA_FIELDS.forEach(f => row[f.key] = entry[f.key] || "");
-    await fetch(SHEETS_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(row),
-    });
-    state.syncStatus[entry._id] = "ok";
-  } catch(e) {
-    state.syncStatus[entry._id] = "error";
-  }
-  render();
-}
-
-// ═══════════════════════════════════════════════
-// PROCESAR IMAGEN CON IA
-// ═══════════════════════════════════════════════
 async function procesarImagen(file) {
-  if (!file) return;
-  setState({ loading: true, error: null, placaEscaneada: false });
-
+  if(!file) return;
+  set({loading:true, error:null, placaOk:false});
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const base64 = e.target.result.split(",")[1];
-    state.preview = e.target.result;
-
+    const b64 = e.target.result.split(",")[1];
+    S.preview = e.target.result;
+    render();
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: SYSTEM_PROMPT,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: file.type || "image/jpeg", data: base64 } },
-              { type: "text", text: "Extrae todos los datos de esta placa industrial." },
-            ],
-          }],
-        }),
+      const res = await fetch(GEMINI_URL, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          contents:[{parts:[
+            {inline_data:{mime_type:file.type||"image/jpeg",data:b64}},
+            {text:PROMPT}
+          ]}],
+          generationConfig:{temperature:0.1}
+        })
       });
-
-      const data = await response.json();
-      const text = (data.content || []).map(b => b.text || "").join("");
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text||"";
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
       const filled = {};
-      PLACA_FIELDS.forEach(f => { filled[f.key] = parsed[f.key] || ""; });
-      setState({ placaData: filled, placaEscaneada: true, manualMode: false, loading: false });
+      PLACA_FIELDS.forEach(f=>{ filled[f.key]=parsed[f.key]||""; });
+      set({placaData:filled, placaOk:true, manualMode:false, loading:false});
     } catch(err) {
-      setState({
-        error: "No se pudo leer la placa automáticamente. Ingresa los datos a mano.",
-        manualMode: true,
-        loading: false,
-      });
+      set({error:"No se pudo leer la placa. Ingresa los datos a mano.", manualMode:true, loading:false});
     }
   };
   reader.readAsDataURL(file);
 }
 
-// ═══════════════════════════════════════════════
-// GUARDAR EQUIPO
-// ═══════════════════════════════════════════════
-function guardarEquipo() {
-  const newEntry = {
-    ...state.manualData,
-    ...state.placaData,
-    _id: Date.now(),
-    _fecha: new Date().toLocaleString("es-EC"),
-  };
-  state.equipos.push(newEntry);
-  saveLocal();
-  syncToSheets(newEntry);
-
-  const emptyM = {}, emptyP = {};
-  MANUAL_FIELDS.forEach(f => emptyM[f.key] = "");
-  PLACA_FIELDS.forEach(f => emptyP[f.key] = "");
-
-  setState({
-    manualData: emptyM,
-    placaData: emptyP,
-    preview: null,
-    placaEscaneada: false,
-    manualMode: false,
-    activeTab: "tabla",
-  });
+async function syncSheets(entry) {
+  if(!SHEETS_URL) return;
+  S.sync[entry._id]="syncing"; render();
+  try {
+    const row={fecha:entry._fecha};
+    MANUAL_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
+    PLACA_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
+    await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(row)});
+    S.sync[entry._id]="ok";
+  } catch(e) { S.sync[entry._id]="error"; }
+  render();
 }
 
-// ═══════════════════════════════════════════════
-// EXPORTAR EXCEL
-// ═══════════════════════════════════════════════
+function guardar() {
+  const e={...S.manualData,...S.placaData,_id:Date.now(),_fecha:new Date().toLocaleString("es-EC")};
+  S.equipos.push(e); save(); syncSheets(e);
+  set({manualData:emptyM(),placaData:emptyP(),preview:null,placaOk:false,manualMode:false,activeTab:"tabla"});
+}
+
 function exportExcel() {
   const wb = XLSX.utils.book_new();
-
-  function buildRows(lista) {
-    return lista.map((eq, i) => {
-      const row = { "#": i + 1, "Fecha": eq._fecha };
-      MANUAL_FIELDS.forEach(f => row[f.label] = eq[f.key] || "");
-      PLACA_FIELDS.forEach(f => row[f.label] = eq[f.key] || "");
-      return row;
+  function rows(lista) {
+    return lista.map((eq,i)=>{
+      const r={"#":i+1,"Fecha":eq._fecha};
+      MANUAL_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
+      PLACA_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
+      return r;
     });
   }
-
-  // Hoja resumen
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildRows(state.equipos)), "Todos los Equipos");
-
-  // Una hoja por línea
-  const lineas = {};
-  state.equipos.forEach(eq => {
-    const linea = (eq.linea || "Sin Línea").trim();
-    if (!lineas[linea]) lineas[linea] = [];
-    lineas[linea].push(eq);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows(S.equipos)), "Todos los Equipos");
+  const lineas={};
+  S.equipos.forEach(eq=>{ const l=(eq.linea||"Sin Línea").trim(); if(!lineas[l]) lineas[l]=[]; lineas[l].push(eq); });
+  Object.entries(lineas).forEach(([l,lista])=>{
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows(lista)), l.substring(0,31));
   });
-
-  Object.entries(lineas).forEach(([linea, lista]) => {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildRows(lista)), linea.substring(0, 31));
-  });
-
-  XLSX.writeFile(wb, `inventario_equipos_${Date.now()}.xlsx`);
+  XLSX.writeFile(wb,"inventario_equipos_"+Date.now()+".xlsx");
 }
 
-// ═══════════════════════════════════════════════
-// RENDER HTML
-// ═══════════════════════════════════════════════
-function buildApp() {
-  return `
-  <div style="min-height:100vh;background:#080a0d;color:#ddd6c8;">
+function updateEq(id,key,val) {
+  const e=S.equipos.find(e=>e._id===id);
+  if(e){e[key]=val;save();}
+}
 
-    <!-- HEADER -->
-    <div style="background:linear-gradient(180deg,#13181f,#0d1117);border-bottom:2px solid #f59e0b;padding:14px 16px;position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;">
-      <div>
-        <div style="color:#f59e0b;font-size:9px;letter-spacing:4px;">◈ INVENTARIO INDUSTRIAL</div>
-        <div style="font-size:20px;font-weight:bold;color:#fff;letter-spacing:2px;">SCAN·PLATE</div>
-      </div>
-      <div>
-        ${SHEETS_URL ? `<span style="background:#0d2210;border:1px solid #22c55e;border-radius:2px;padding:4px 8px;font-size:9px;color:#22c55e;letter-spacing:1px;margin-right:8px;">⬡ SHEETS</span>` : ""}
-        <button onclick="exportExcel()" ${state.equipos.length === 0 ? "disabled" : ""}
-          style="background:${state.equipos.length > 0 ? "#f59e0b" : "#1f2937"};color:${state.equipos.length > 0 ? "#000" : "#4b5563"};border:none;padding:7px 14px;font-size:11px;font-weight:bold;cursor:${state.equipos.length > 0 ? "pointer" : "default"};border-radius:2px;letter-spacing:1px;">
-          ↓ EXCEL (${state.equipos.length})
-        </button>
-      </div>
+function deleteEq(id) {
+  if(confirm("¿Eliminar este equipo?")){ S.equipos=S.equipos.filter(e=>e._id!==id); save(); set({}); }
+}
+
+function ui() {
+  return `<div style="min-height:100vh;background:#080a0d;color:#ddd6c8;">
+
+  <div style="background:linear-gradient(180deg,#13181f,#0d1117);border-bottom:2px solid #f59e0b;padding:14px 16px;position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <div style="color:#f59e0b;font-size:9px;letter-spacing:4px;">◈ INVENTARIO INDUSTRIAL</div>
+      <div style="font-size:20px;font-weight:bold;color:#fff;letter-spacing:2px;">SCAN·PLATE</div>
     </div>
-
-    <!-- TABS -->
-    <div style="display:flex;border-bottom:1px solid #1f2937;">
-      ${["scan","tabla"].map(tab => `
-        <button onclick="setState({activeTab:'${tab}',editingRow:null})"
-          style="flex:1;padding:11px;background:${state.activeTab===tab?"#0d1117":"transparent"};border:none;border-bottom:2px solid ${state.activeTab===tab?"#f59e0b":"transparent"};color:${state.activeTab===tab?"#f59e0b":"#4b5563"};font-size:10px;letter-spacing:2px;cursor:pointer;font-weight:bold;">
-          ${tab === "scan" ? "◈ NUEVO EQUIPO" : `▤ REGISTROS (${state.equipos.length})`}
-        </button>
-      `).join("")}
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span style="background:#0d2210;border:1px solid #22c55e;border-radius:2px;padding:4px 8px;font-size:9px;color:#22c55e;">⬡ GEMINI</span>
+      <button onclick="exportExcel()" ${S.equipos.length===0?"disabled":""}
+        style="background:${S.equipos.length>0?"#f59e0b":"#1f2937"};color:${S.equipos.length>0?"#000":"#4b5563"};border:none;padding:7px 14px;font-size:11px;font-weight:bold;cursor:pointer;border-radius:2px;letter-spacing:1px;">
+        ↓ EXCEL (${S.equipos.length})
+      </button>
     </div>
+  </div>
 
-    ${state.activeTab === "scan" ? buildScanTab() : buildTablaTab()}
+  <div style="display:flex;border-bottom:1px solid #1f2937;">
+    ${["scan","tabla"].map(t=>`
+      <button onclick="set({activeTab:'${t}',editingRow:null})"
+        style="flex:1;padding:11px;background:${S.activeTab===t?"#0d1117":"transparent"};border:none;border-bottom:2px solid ${S.activeTab===t?"#f59e0b":"transparent"};color:${S.activeTab===t?"#f59e0b":"#4b5563"};font-size:10px;letter-spacing:2px;cursor:pointer;font-weight:bold;">
+        ${t==="scan"?"◈ NUEVO EQUIPO":"▤ REGISTROS ("+S.equipos.length+")"}
+      </button>`).join("")}
+  </div>
+
+  ${S.activeTab==="scan" ? scanTab() : tablaTab()}
   </div>`;
 }
 
-function buildScanTab() {
-  return `
-  <div style="padding:16px;">
+function field(label) { return `<div style="color:#4b5563;font-size:9px;letter-spacing:1px;margin-bottom:4px;">${label}</div>`; }
+function inp2(key,val,ph,fn) { return `<input value="${x(val)}" placeholder="${ph}" oninput="${fn}" style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:9px 10px;font-size:12px;width:100%;border-radius:2px;" />`; }
+function sec(n,t,c) { c=c||"#f59e0b"; return `<div style="color:${c};font-size:9px;letter-spacing:3px;margin:18px 0 10px;border-bottom:1px solid ${c}33;padding-bottom:5px;">${n} ${t}</div>`; }
 
-    <!-- DATOS MANUALES -->
-    <div style="color:#f59e0b;font-size:9px;letter-spacing:3px;margin:0 0 10px;border-bottom:1px solid #f59e0b33;padding-bottom:5px;">① DATOS DE IDENTIFICACIÓN — LLENAR A MANO</div>
-    ${MANUAL_FIELDS.map(f => `
-      <div style="margin-bottom:10px;">
-        <div style="color:#4b5563;font-size:9px;letter-spacing:1px;margin-bottom:4px;">${f.label.toUpperCase()}</div>
-        <input id="m_${f.key}" value="${escHtml(state.manualData[f.key] || "")}" placeholder="${f.placeholder}"
-          oninput="state.manualData['${f.key}']=this.value"
-          style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:9px 10px;font-size:12px;width:100%;border-radius:2px;" />
-      </div>
-    `).join("")}
+function scanTab() {
+  return `<div style="padding:16px;">
+  ${sec("①","DATOS DE IDENTIFICACIÓN — LLENAR A MANO")}
+  ${MANUAL_FIELDS.map(f=>`<div style="margin-bottom:10px;">${field(f.label.toUpperCase())}${inp2(f.key,S.manualData[f.key]||"",f.placeholder,"S.manualData['"+f.key+"']=this.value")}</div>`).join("")}
+  ${sec("②","DATOS DE PLACA")}
+  <input type="file" id="cam" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(this.files[0])" />
+  <input type="file" id="gal" accept="image/*" style="display:none" onchange="procesarImagen(this.files[0])" />
+  ${!S.loading?`
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+    <button onclick="document.getElementById('cam').click()" style="background:#0d1117;border:2px solid #f59e0b;color:#f59e0b;padding:16px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">📷 CÁMARA</button>
+    <button onclick="document.getElementById('gal').click()" style="background:#0d1117;border:2px solid #374151;color:#9ca3af;padding:16px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">🖼️ GALERÍA</button>
+  </div>`:""}
+  ${S.loading?`
+  <div style="border:1px solid #374151;border-radius:4px;padding:20px;text-align:center;margin-bottom:12px;">
+    ${S.preview?`<img src="${S.preview}" style="max-height:130px;max-width:100%;border-radius:2px;margin-bottom:8px;" />`:""}
+    <div class="spin" style="font-size:28px;">⚙</div>
+    <div class="pulse" style="color:#f59e0b;font-size:11px;letter-spacing:2px;margin-top:6px;">LEYENDO PLACA CON IA...</div>
+    <div style="color:#4b5563;font-size:10px;margin-top:4px;">Gemini está analizando la imagen</div>
+  </div>`:S.preview?`
+  <div style="border:1px solid ${S.placaOk?"#22c55e":"#374151"};border-radius:4px;padding:12px;margin-bottom:12px;text-align:center;">
+    <img src="${S.preview}" style="max-height:130px;max-width:100%;border-radius:2px;margin-bottom:8px;" />
+    ${S.placaOk?`<div style="color:#22c55e;font-size:11px;">✓ PLACA LEÍDA CORRECTAMENTE</div>`:""}
+  </div>`:""}
+  ${S.error?`<div style="background:#2d0f0f;border:1px solid #ef4444;color:#ef4444;padding:10px;border-radius:4px;font-size:11px;margin-bottom:10px;">⚠ ${x(S.error)}</div>`:""}
+  <button onclick="set({manualMode:${!S.manualMode}})" style="background:transparent;border:1px solid ${S.manualMode?"#f59e0b":"#374151"};color:${S.manualMode?"#f59e0b":"#6b7280"};padding:8px 12px;font-size:10px;cursor:pointer;border-radius:2px;letter-spacing:1px;width:100%;margin-bottom:12px;">
+    ${S.manualMode?"▲ OCULTAR CAMPOS MANUALES":"✎ PLACA NO LEGIBLE — INGRESAR A MANO"}
+  </button>
+  ${(S.placaOk||S.manualMode)?`
+  <div class="slide" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+    ${PLACA_FIELDS.map(f=>`<div style="grid-column:${f.key==="otros"?"span 2":"span 1"}">${field(f.label.toUpperCase())}${inp2(f.key,S.placaData[f.key]||"",f.placeholder,"S.placaData['"+f.key+"']=this.value")}</div>`).join("")}
+  </div>`:""}
+  <button onclick="guardar()" style="background:#f59e0b;border:none;color:#000;padding:14px;font-size:13px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;width:100%;margin-top:20px;">
+    + GUARDAR EQUIPO
+  </button>
+  </div>`;
+}
 
-    <!-- SECCIÓN FOTO -->
-    <div style="color:#f59e0b;font-size:9px;letter-spacing:3px;margin:18px 0 10px;border-bottom:1px solid #f59e0b33;padding-bottom:5px;">② DATOS DE PLACA</div>
-
-    <!-- Inputs de archivo ocultos -->
-    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(this.files[0])" />
-    <input type="file" id="galleryInput" accept="image/*" style="display:none" onchange="procesarImagen(this.files[0])" />
-
-    ${!state.loading ? `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-      <button onclick="document.getElementById('cameraInput').click()"
-        style="background:#0d1117;border:2px solid #f59e0b;color:#f59e0b;padding:16px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">
-        📷 CÁMARA
-      </button>
-      <button onclick="document.getElementById('galleryInput').click()"
-        style="background:#0d1117;border:2px solid #374151;color:#9ca3af;padding:16px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">
-        🖼️ GALERÍA
-      </button>
-    </div>` : ""}
-
-    ${state.loading ? `
-    <div style="border:1px solid #374151;border-radius:4px;padding:20px;text-align:center;margin-bottom:12px;">
-      ${state.preview ? `<img src="${state.preview}" style="max-height:130px;max-width:100%;border-radius:2px;margin-bottom:8px;border:1px solid #1f2937;" />` : ""}
-      <div class="spin" style="font-size:28px;">⚙</div>
-      <div class="pulse" style="color:#f59e0b;font-size:11px;letter-spacing:2px;margin-top:6px;">LEYENDO PLACA...</div>
-    </div>` : state.preview ? `
-    <div style="border:1px solid ${state.placaEscaneada?"#22c55e":"#374151"};border-radius:4px;padding:12px;margin-bottom:12px;text-align:center;">
-      <img src="${state.preview}" style="max-height:130px;max-width:100%;border-radius:2px;margin-bottom:8px;border:1px solid #1f2937;" />
-      ${state.placaEscaneada ? `<div style="color:#22c55e;font-size:11px;">✓ PLACA LEÍDA CORRECTAMENTE</div>` : ""}
-    </div>` : ""}
-
-    ${state.error ? `
-    <div style="background:#2d0f0f;border:1px solid #ef4444;color:#ef4444;padding:10px;border-radius:4px;font-size:11px;margin-bottom:10px;">
-      ⚠ ${state.error}
-    </div>` : ""}
-
-    <!-- Toggle manual -->
-    <button onclick="setState({manualMode:${!state.manualMode}})"
-      style="background:transparent;border:1px solid ${state.manualMode?"#f59e0b":"#374151"};color:${state.manualMode?"#f59e0b":"#6b7280"};padding:8px 12px;font-size:10px;cursor:pointer;border-radius:2px;letter-spacing:1px;width:100%;margin-bottom:12px;">
-      ${state.manualMode ? "▲ OCULTAR CAMPOS MANUALES" : "✎ PLACA NO LEGIBLE — INGRESAR A MANO"}
-    </button>
-
-    <!-- Campos de placa -->
-    ${(state.placaEscaneada || state.manualMode) ? `
-    <div class="slide" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-      ${PLACA_FIELDS.map(f => `
-        <div style="grid-column:${f.key==="otros"?"span 2":"span 1"}">
-          <div style="color:#4b5563;font-size:9px;letter-spacing:1px;margin-bottom:4px;">${f.label.toUpperCase()}</div>
-          <input id="p_${f.key}" value="${escHtml(state.placaData[f.key] || "")}" placeholder="${f.placeholder}"
-            oninput="state.placaData['${f.key}']=this.value"
-            style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:9px 10px;font-size:12px;width:100%;border-radius:2px;" />
+function tablaTab() {
+  if(S.equipos.length===0) return `<div style="text-align:center;padding:60px 20px;color:#1f2937;"><div style="font-size:48px;">▤</div><div style="font-size:12px;letter-spacing:2px;margin-top:12px;">SIN REGISTROS</div></div>`;
+  return `<div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+  ${S.equipos.map((eq,i)=>{
+    const ed=S.editingRow===eq._id;
+    const sy=S.sync[eq._id];
+    const badge=sy==="ok"?`<span style="color:#22c55e;font-size:9px;">⬡ OK</span>`:sy==="error"?`<span style="color:#ef4444;font-size:9px;">⚠</span>`:sy==="syncing"?`<span class="spin" style="color:#60a5fa;font-size:9px;display:inline-block;">↻</span>`:`<span style="color:#374151;font-size:9px;">◌</span>`;
+    const fld=(f,c)=>ed?`<input value="${x(eq[f.key]||"")}" oninput="updateEq(${eq._id},'${f.key}',this.value)" style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:4px 6px;font-size:11px;width:100%;border-radius:2px;" />`:`<div style="color:${eq[f.key]?(c||"#ddd6c8"):"#1f2937"};font-size:11px;font-weight:${c==="22c55e"?"bold":"normal"};">${x(eq[f.key]||"—")}</div>`;
+    return `<div class="slide" style="background:#0d1117;border:1px solid ${ed?"#f59e0b":"#1f2937"};border-radius:4px;overflow:hidden;">
+      <div style="background:#13181f;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <span style="color:#f59e0b;font-size:10px;">#${String(i+1).padStart(3,"0")} </span>
+          <span style="color:#fff;font-size:12px;font-weight:bold;">${x(eq.tipo_equipo||"Equipo")} — ${x(eq.marca||"—")}</span>
+          ${eq.linea?`<span style="color:#22c55e;font-size:10px;margin-left:6px;">· ${x(eq.linea)}</span>`:""}
         </div>
-      `).join("")}
-    </div>` : ""}
-
-    <!-- GUARDAR -->
-    <button onclick="guardarEquipo()"
-      style="background:#f59e0b;border:none;color:#000;padding:14px;font-size:13px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;width:100%;margin-top:20px;">
-      + GUARDAR EQUIPO
-    </button>
-  </div>`;
-}
-
-function buildTablaTab() {
-  if (state.equipos.length === 0) return `
-    <div style="text-align:center;padding:60px 20px;color:#1f2937;">
-      <div style="font-size:48px;">▤</div>
-      <div style="font-size:12px;letter-spacing:2px;margin-top:12px;">SIN REGISTROS</div>
-      <div style="font-size:10px;margin-top:6px;">Registra un equipo para comenzar</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          ${badge}
+          <button onclick="set({editingRow:${ed?"null":eq._id}})" style="background:transparent;border:1px solid #374151;color:#9ca3af;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✎</button>
+          <button onclick="deleteEq(${eq._id})" style="background:transparent;border:1px solid #374151;color:#ef4444;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✕</button>
+        </div>
+      </div>
+      <div style="padding:10px 12px;background:#090f09;border-bottom:1px solid #1f2937;">
+        <div style="color:#22c55e;font-size:9px;letter-spacing:2px;margin-bottom:6px;">IDENTIFICACIÓN</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          ${MANUAL_FIELDS.map(f=>`<div>${field(f.label.toUpperCase())}${fld(f,"#22c55e")}</div>`).join("")}
+        </div>
+      </div>
+      <div style="padding:10px 12px;">
+        <div style="color:#f59e0b;font-size:9px;letter-spacing:2px;margin-bottom:6px;">DATOS DE PLACA</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          ${PLACA_FIELDS.map(f=>`<div style="grid-column:${f.key==="otros"?"span 2":"span 1"}">${field(f.label.toUpperCase())}${fld(f)}</div>`).join("")}
+        </div>
+      </div>
+      <div style="padding:5px 12px;border-top:1px solid #1f2937;color:#374151;font-size:9px;">${x(eq._fecha)}</div>
     </div>`;
-
-  return `
-  <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
-    ${state.equipos.map((eq, i) => {
-      const editing = state.editingRow === eq._id;
-      const sync = state.syncStatus[eq._id];
-      const syncBadge = SHEETS_URL ? (
-        sync === "ok" ? `<span style="color:#22c55e;font-size:9px;">⬡ OK</span>` :
-        sync === "error" ? `<span style="color:#ef4444;font-size:9px;">⚠ ERR</span>` :
-        sync === "syncing" ? `<span class="spin" style="color:#60a5fa;font-size:9px;">↻</span>` :
-        `<span style="color:#374151;font-size:9px;">◌</span>`
-      ) : "";
-
-      return `
-      <div class="slide" style="background:#0d1117;border:1px solid ${editing?"#f59e0b":"#1f2937"};border-radius:4px;overflow:hidden;">
-        <div style="background:#13181f;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <span style="color:#f59e0b;font-size:10px;">#${String(i+1).padStart(3,"0")} </span>
-            <span style="color:#fff;font-size:12px;font-weight:bold;">${escHtml(eq.tipo_equipo||"Equipo")} — ${escHtml(eq.marca||"—")}</span>
-            ${eq.linea ? `<span style="color:#22c55e;font-size:10px;margin-left:8px;">· ${escHtml(eq.linea)}</span>` : ""}
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;">
-            ${syncBadge}
-            <button onclick="setState({editingRow:${editing?"null":eq._id}})"
-              style="background:transparent;border:1px solid #374151;color:#9ca3af;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✎</button>
-            <button onclick="deleteEquipo(${eq._id})"
-              style="background:transparent;border:1px solid #374151;color:#ef4444;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✕</button>
-          </div>
-        </div>
-
-        <div style="padding:10px 12px;background:#090f09;border-bottom:1px solid #1f2937;">
-          <div style="color:#22c55e;font-size:9px;letter-spacing:2px;margin-bottom:6px;">IDENTIFICACIÓN</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            ${MANUAL_FIELDS.map(f => `
-              <div>
-                <div style="color:#374151;font-size:9px;">${f.label.toUpperCase()}</div>
-                ${editing
-                  ? `<input value="${escHtml(eq[f.key]||"")}" oninput="updateEquipo(${eq._id},'${f.key}',this.value)" style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:4px 6px;font-size:11px;width:100%;border-radius:2px;" />`
-                  : `<div style="color:${eq[f.key]?"#22c55e":"#1f2937"};font-size:11px;font-weight:bold;">${escHtml(eq[f.key]||"—")}</div>`
-                }
-              </div>
-            `).join("")}
-          </div>
-        </div>
-
-        <div style="padding:10px 12px;">
-          <div style="color:#f59e0b;font-size:9px;letter-spacing:2px;margin-bottom:6px;">DATOS DE PLACA</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            ${PLACA_FIELDS.map(f => `
-              <div style="grid-column:${f.key==="otros"?"span 2":"span 1"}">
-                <div style="color:#374151;font-size:9px;">${f.label.toUpperCase()}</div>
-                ${editing
-                  ? `<input value="${escHtml(eq[f.key]||"")}" oninput="updateEquipo(${eq._id},'${f.key}',this.value)" style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:4px 6px;font-size:11px;width:100%;border-radius:2px;" />`
-                  : `<div style="color:${eq[f.key]?"#ddd6c8":"#1f2937"};font-size:11px;">${escHtml(eq[f.key]||"—")}</div>`
-                }
-              </div>
-            `).join("")}
-          </div>
-        </div>
-        <div style="padding:5px 12px;border-top:1px solid #1f2937;color:#374151;font-size:9px;">${eq._fecha}</div>
-      </div>`;
-    }).join("")}
-
-    <button onclick="exportExcel()"
-      style="background:#f59e0b;border:none;color:#000;padding:14px;font-size:12px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;margin-top:4px;">
-      ↓ EXPORTAR ${state.equipos.length} EQUIPO${state.equipos.length!==1?"S":""} A EXCEL
-    </button>
-    <button onclick="if(confirm('¿Borrar todos los registros?')){state.equipos=[];saveLocal();setState({})}"
-      style="background:transparent;border:1px solid #1f2937;color:#4b5563;padding:10px;font-size:10px;cursor:pointer;border-radius:4px;letter-spacing:1px;">
-      ✕ LIMPIAR TODOS
-    </button>
+  }).join("")}
+  <button onclick="exportExcel()" style="background:#f59e0b;border:none;color:#000;padding:14px;font-size:12px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;margin-top:4px;">
+    ↓ EXPORTAR ${S.equipos.length} EQUIPO${S.equipos.length!==1?"S":""} A EXCEL
+  </button>
+  <button onclick="if(confirm('¿Borrar todos los registros?')){S.equipos=[];save();set({})}" style="background:transparent;border:1px solid #1f2937;color:#4b5563;padding:10px;font-size:10px;cursor:pointer;border-radius:4px;letter-spacing:1px;">
+    ✕ LIMPIAR TODOS
+  </button>
   </div>`;
 }
 
-function escHtml(str) {
-  return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
-
-function updateEquipo(id, key, value) {
-  const eq = state.equipos.find(e => e._id === id);
-  if (eq) { eq[key] = value; saveLocal(); }
-}
-
-function deleteEquipo(id) {
-  if (confirm("¿Eliminar este equipo?")) {
-    state.equipos = state.equipos.filter(e => e._id !== id);
-    saveLocal();
-    setState({});
-  }
-}
-
-function attachEvents() {}
-
-// ═══════════════════════════════════════════════
-// ARRANCAR
-// ═══════════════════════════════════════════════
 render();
 </script>
 </body>
