@@ -1,0 +1,22 @@
+{
+  "name": "SCAN·PLATE Inventario Industrial",
+  "short_name": "SCAN·PLATE",
+  "description": "Escanea placas de equipos industriales con IA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080a0d",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192x192/f59e0b/000000?text=SP",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512x512/f59e0b/000000?text=SP",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
