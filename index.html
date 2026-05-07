@@ -25,7 +25,7 @@
 <div id="app"></div>
 <script>
 
-const SHEETS_URL  = "https://script.google.com/macros/s/AKfycby1i74NMnTGrtG3-4BAkQXn9RTXh5WnMV6CmrzOqFdO_IMdE58fzi0bCxUbdRQPlekt/exec";
+const SHEETS_URL  = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec";
 const GEMINI_KEY  = "AIzaSyD-xsjKnCSwSsUR-yP2AMRkjjvZG2VzIbE";
 const GEMINI_URL  = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_KEY;
 const STORAGE_KEY = "scanplate_v7";
@@ -110,17 +110,24 @@ async function guardar() {
     _id:Date.now(), _fecha:new Date().toLocaleString("es-EC"), _img:S.preview,
   };
 
-  // Enviar a Sheets con no-cors (funciona para enviar, no para recibir respuesta)
+  // Enviar a Sheets con foto
   try {
     const row = {fecha:entry._fecha};
     MANUAL_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
     PLACA_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
-    await fetch(SHEETS_URL, {
-      method:"POST", mode:"no-cors",
-      headers:{"Content-Type":"application/json"},
+    row.photo_base64 = S.preview ? S.preview.split(",")[1] : "";
+    row.photo_mime   = "image/jpeg";
+    row.photo_name   = "equipo_"+entry._id+".jpg";
+    const res = await fetch(SHEETS_URL, {
+      method:"POST",
+      headers:{"Content-Type":"text/plain"},
       body:JSON.stringify(row),
     });
-  } catch(e){}
+    try {
+      const data = await res.json();
+      entry._photoLink = data.photoLink||"";
+    } catch(e){}
+  } catch(err){ console.log(err); }
 
   S.equipos.push(entry);
   save();
