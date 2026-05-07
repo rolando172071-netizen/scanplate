@@ -1,7 +1,7 @@
 {
   "name": "SCAN·PLATE Inventario Industrial",
   "short_name": "SCAN·PLATE",
-  "description": "Escanea placas de equipos industriales con IA",
+  "description": "Escanea placas de equipos industriales con OCR gratuito",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080a0d",
