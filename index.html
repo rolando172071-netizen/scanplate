@@ -6,10 +6,8 @@
     <title>SCAN·PLATE — Inventario Industrial</title>
     <meta name="theme-color" content="#f59e0b" />
     <link rel="manifest" href="manifest.json" />
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js">
-    </script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js">
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style>
         :root { --bg: #080a0d; --card: #0d1117; --border: #1f2937; --accent: #f59e0b; --text: #ddd6c8; --muted: #4b5563; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,11 +33,10 @@
 <div id="app"></div>
 
 <script>
-// ============ CONFIGURACIÓN (CAMBIA SOLO ESTO) ============
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec"; // ← PON AQUÍ TU URL
+// ========== ⚠️ SOLO CAMBIA ESTA LÍNEA ==========
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec"; // ← Pon aquí tu URL real
 
-const STORAGE_KEY = "scanplate_ocr_v2";
-const PROMPT_OCR = ""; // No se usa, era para Gemini
+const STORAGE_KEY = "scanplate_final";
 
 // Campos manuales (identificación)
 const MANUAL_FIELDS = [
@@ -49,7 +46,7 @@ const MANUAL_FIELDS = [
     { key: "linea",      label: "Línea de Producción", placeholder: "Ej: Línea 1" },
 ];
 
-// Campos de placa (se llenan con OCR o manualmente)
+// Campos de placa (se llenan automáticamente si se detectan)
 const PLACA_FIELDS = [
     { key: "tipo_equipo",       label: "Tipo de Equipo", placeholder: "Motor / Servo / Sensor..." },
     { key: "marca",             label: "Marca", placeholder: "Ej: Siemens" },
@@ -67,7 +64,6 @@ const PLACA_FIELDS = [
     { key: "otros",             label: "Otros Datos", placeholder: "Cualquier dato adicional..." },
 ];
 
-// ============ ESTADO ============
 function emptyM() { return MANUAL_FIELDS.reduce((a,f)=>({...a,[f.key]:""}),{}); }
 function emptyP() { return PLACA_FIELDS.reduce((a,f)=>({...a,[f.key]:""}),{}); }
 
@@ -76,7 +72,7 @@ let S = {
     activeTab: "scan",
     loading: false,
     preview: null,
-    ocrText: "",          // texto crudo del OCR
+    ocrText: "",
     error: null,
     manualMode: false,
     editingRow: null,
@@ -85,27 +81,16 @@ let S = {
     sync: {},
 };
 
-try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) S.equipos = JSON.parse(saved);
-} catch(e) {}
+try { const s=localStorage.getItem(STORAGE_KEY); if(s) S.equipos=JSON.parse(s); } catch(e){}
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(S.equipos)); }
+function x(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function set(u) { Object.assign(S,u); render(); }
 
-function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(S.equipos));
-}
-
-function x(str) {
-    return String(str||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}
-
-function set(updates) { Object.assign(S, updates); render(); }
-
-// ============ OCR CON TESSERACT ============
+// ========== OCR con Tesseract ==========
 let ocrWorker = null;
-
 async function initOCR() {
     if (ocrWorker) return ocrWorker;
-    ocrWorker = await Tesseract.createWorker('spa'); // español, puedes cambiar a 'eng'
+    ocrWorker = await Tesseract.createWorker('spa');
     return ocrWorker;
 }
 
@@ -121,50 +106,88 @@ async function procesarImagen(file) {
             const { data: { text } } = await worker.recognize(file);
             S.ocrText = text.trim();
             set({ loading: false });
-            // Si hay texto, mostrarlo y activar modo manual para que el usuario complete
-            if (S.ocrText) {
-                set({ manualMode: true });
-            } else {
-                set({ error: "No se detectó texto. Completa manualmente.", manualMode: false });
-            }
+            if (S.ocrText) set({ manualMode: false }); // se activará al parsear
+            else set({ error: "No se detectó texto.", manualMode: false });
         } catch (err) {
-            set({ loading: false, error: "Error OCR: " + err.message, manualMode: false });
+            set({ loading: false, error: "Error OCR: " + err.message });
         }
     };
     reader.readAsDataURL(file);
 }
 
-// ============ ENVÍO A GOOGLE SHEETS ============
-async function syncSheets(entry) {
-    if (!SHEETS_URL || SHEETS_URL.includes("TU_NUEVO_SCRIPT_ID")) {
-        console.warn("URL de Sheets no configurada.");
-        return;
+// ========== Función mágica para extraer datos del texto OCR ==========
+function extraerDatosDeTexto() {
+    const txt = S.ocrText;
+    if (!txt) return alert("Primero toma una foto o carga una imagen.");
+    const data = {};
+    // Marca conocida
+    const marcas = ['Siemens', 'ABB', 'Schneider', 'Allen-Bradley', 'Mitsubishi', 'Yaskawa', 'Festo', 'Rockwell', 'Omron'];
+    for (const m of marcas) { if (txt.toLowerCase().includes(m.toLowerCase())) { data.marca = m; break; } }
+    if (!data.marca) data.marca = txt.split(/[\r\n]+/)[0].trim();
+
+    // Modelo tipo código Siemens
+    let match = txt.match(/\b\d\w{2,4}\s[\w\d\-]{4,}\b/);
+    if (match) data.modelo = match[1].trim();
+
+    // Número de serie
+    match = txt.match(/(?:S\/N|Serie|SN|Serial)[:\s]*([A-Z0-9\-]+)/i);
+    if (!match) {
+        const lines = txt.split(/[\r\n]+/);
+        if (data.modelo) {
+            const idx = lines.findIndex(l => l.includes(data.modelo));
+            if (idx>=0 && idx+1<lines.length) match = [null, lines[idx+1].trim()];
+        }
+        if (!match) match = txt.match(/C-[A-Z0-9]+/); // patrón Siemens
     }
-    S.sync[entry._id] = "syncing";
-    render();
+    if (match && match[1]) data.numero_serie = match[1];
+
+    // MAC
+    match = txt.match(/([0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2}-[0-9A-F]{2})/i);
+    if (match) data.otros = (data.otros||"") + "MAC: " + match[1];
+
+    // Voltaje
+    match = txt.match(/(\d+[\.,]?\d*\s*V)/i);
+    if (match) data.voltaje = match[1].replace(/\s/g,"");
+    // Amperaje
+    match = txt.match(/(\d+[\.,]?\d*\s*A)/i);
+    if (match) data.amperaje = match[1].replace(/\s/g,"");
+    // IP
+    match = txt.match(/IP\s*(\d{2})/i);
+    if (match) data.proteccion_ip = "IP" + match[1];
+    // Temperatura
+    match = txt.match(/(\d+°C[\s\.]*\.\.[\s\.]*\d+°C)/i);
+    if (match) data.otros = (data.otros||"") + " | Temp: " + match[1];
+    // Fabricación
+    match = txt.match(/Made in\s+(\w+)/i);
+    if (match) data.fabricacion = match[1];
+
+    // Fusionar con lo existente
+    const nuevo = { ...S.placaData };
+    PLACA_FIELDS.forEach(f => { if (data[f.key] !== undefined && data[f.key] !== "") nuevo[f.key] = data[f.key]; });
+    set({ placaData: nuevo, manualMode: true });
+}
+
+// ========== Envío a Google Sheets ==========
+async function syncSheets(entry) {
+    if (!SHEETS_URL || SHEETS_URL.includes("TU_ID")) return;
+    S.sync[entry._id] = "syncing"; render();
     try {
         const payload = { fecha: entry._fecha };
         MANUAL_FIELDS.forEach(f => payload[f.key] = entry[f.key] || "");
         PLACA_FIELDS.forEach(f => payload[f.key] = entry[f.key] || "");
         const res = await fetch(SHEETS_URL, {
             method: "POST",
-            mode: "cors",     // ← importante: quitar no-cors
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
         if (res.ok) {
             const data = await res.json();
             S.sync[entry._id] = data.result === "ok" ? "ok" : "error";
-        } else {
-            S.sync[entry._id] = "error";
-        }
-    } catch(e) {
-        S.sync[entry._id] = "error";
-    }
+        } else S.sync[entry._id] = "error";
+    } catch(e) { S.sync[entry._id] = "error"; }
     render();
 }
 
-// ============ GUARDAR EQUIPO ============
 function guardar() {
     const entry = {
         ...S.manualData,
@@ -175,23 +198,12 @@ function guardar() {
     S.equipos.push(entry);
     save();
     syncSheets(entry);
-    set({ manualData: emptyM(), placaData: emptyP(), preview: null, ocrText:"", error:null, manualMode:false, activeTab:"tabla" });
+    set({ manualData: emptyM(), placaData: emptyP(), preview: null, ocrText: "", error: null, manualMode: false, activeTab: "tabla" });
 }
 
-function updateEq(id, key, val) {
-    const eq = S.equipos.find(e => e._id === id);
-    if (eq) { eq[key] = val; save(); }
-}
+function updateEq(id, key, val) { const eq = S.equipos.find(e => e._id === id); if (eq) { eq[key] = val; save(); } }
+function deleteEq(id) { if (confirm("¿Eliminar?")) { S.equipos = S.equipos.filter(e => e._id !== id); save(); set({}); } }
 
-function deleteEq(id) {
-    if (confirm("¿Eliminar este equipo?")) {
-        S.equipos = S.equipos.filter(e => e._id !== id);
-        save();
-        set({});
-    }
-}
-
-// ============ EXPORTAR EXCEL (SIN DEPENDER DE SHEETS) ============
 function exportExcel() {
     const wb = XLSX.utils.book_new();
     function rows(lista) {
@@ -206,17 +218,17 @@ function exportExcel() {
     XLSX.writeFile(wb, "inventario_placas.xlsx");
 }
 
-// ============ UI (manteniendo tu estilo original) ============
+// ========== Interfaz ==========
 function field(label) { return `<div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:4px;">${label}</div>`; }
 function inp2(key, val, ph, fn) {
-    return `<input value="${x(val)}" placeholder="${ph}" oninput="${fn}" style="background:#080a0d;border:1px solid var(--border);color:var(--text);padding:9px 10px;font-size:12px;width:100%;border-radius:2px;" />`;
+    return `<input value="${x(val)}" placeholder="${ph}" oninput="${fn}" style="background:#080a0d;border:1px solid var(--border);color:var(--text);padding:9px;font-size:12px;width:100%;border-radius:2px;" />`;
 }
 
 function scanTab() {
     return `<div style="padding:16px;">
     <div style="color:var(--accent);font-size:9px;letter-spacing:3px;margin-bottom:10px;">① DATOS DE IDENTIFICACIÓN</div>
     ${MANUAL_FIELDS.map(f=>`<div style="margin-bottom:10px;">${field(f.label.toUpperCase())}${inp2(f.key,S.manualData[f.key]||"",f.placeholder,"S.manualData['"+f.key+"']=this.value")}</div>`).join("")}
-    <div style="color:var(--accent);font-size:9px;letter-spacing:3px;margin:18px 0 10px;">② LECTURA DE PLACA (OCR)</div>
+    <div style="color:var(--accent);font-size:9px;letter-spacing:3px;margin:18px 0 10px;">② LECTURA DE PLACA</div>
     <input type="file" id="cam" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(this.files[0])" />
     <input type="file" id="gal" accept="image/*" style="display:none" onchange="procesarImagen(this.files[0])" />
     ${!S.loading ? `
@@ -226,8 +238,13 @@ function scanTab() {
     </div>` : ''}
     ${S.loading ? `<div class="card" style="padding:20px;text-align:center;"><span class="spin">⚙</span><div class="pulse" style="color:var(--accent);">LEYENDO PLACA...</div></div>` :
       S.preview ? `<div class="card" style="padding:12px;text-align:center;margin-bottom:12px;"><img src="${S.preview}" style="max-height:130px;max-width:100%;border-radius:2px;" /><div style="color:#22c55e;margin-top:6px;font-size:11px;">✓ IMAGEN CARGADA</div></div>` : ''}
-    ${S.ocrText ? `<div class="card" style="padding:10px;margin-bottom:10px;"><span style="color:var(--accent);">Texto detectado:</span><br/><span style="font-size:11px;">${x(S.ocrText)}</span></div>` : ''}
-    ${S.error ? `<div style="background:#2d0f0f;border:1px solid #ef4444;color:#ef4444;padding:10px;border-radius:4px;font-size:11px;margin-bottom:10px;">⚠ ${x(S.error)}</div>` : ''}
+    ${S.ocrText ? `
+    <div class="card" style="padding:10px;margin-bottom:10px;">
+        <span style="color:var(--accent);">Texto detectado:</span>
+        <div style="font-size:11px;margin:6px 0;">${x(S.ocrText)}</div>
+        <button onclick="extraerDatosDeTexto()" style="background:var(--accent);color:#000;border:none;padding:8px;width:100%;font-size:11px;font-weight:bold;">🔍 EXTRAER DATOS AUTOMÁTICAMENTE</button>
+    </div>` : ''}
+    ${S.error ? `<div style="background:#2d0f0f;border:1px solid #ef4444;color:#ef4444;padding:10px;font-size:11px;margin-bottom:10px;">⚠ ${x(S.error)}</div>` : ''}
     <button onclick="set({manualMode:!S.manualMode})" style="background:transparent;border:1px solid ${S.manualMode?'var(--accent)':'var(--border)'};color:${S.manualMode?'var(--accent)':'#6b7280'};padding:8px;width:100%;margin-bottom:12px;font-size:10px;">
         ${S.manualMode ? '▲ OCULTAR CAMPOS DE PLACA' : '✎ LLENAR DATOS DE PLACA MANUALMENTE'}
     </button>
@@ -275,14 +292,14 @@ function tablaTab() {
 
 function render() {
     document.getElementById("app").innerHTML = `
-    <div style="min-height:100vh;background:#080a0d;color:var(--text);">
+    <div style="min-height:100vh;background:#080a0d;">
         <div style="background:linear-gradient(180deg,#13181f,#0d1117);border-bottom:2px solid var(--accent);padding:14px 16px;position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;">
             <div>
                 <div style="color:var(--accent);font-size:9px;letter-spacing:4px;">◈ INVENTARIO INDUSTRIAL</div>
                 <div style="font-size:20px;font-weight:bold;color:#fff;letter-spacing:2px;">SCAN·PLATE</div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
-                <span style="background:#0d2210;border:1px solid #22c55e;border-radius:2px;padding:4px 8px;font-size:9px;color:#22c55e;">⬡ OCR GRATIS</span>
+                <span style="background:#0d2210;border:1px solid #22c55e;border-radius:2px;padding:4px 8px;font-size:9px;color:#22c55e;">⬡ OCR + SHEETS</span>
                 <button onclick="exportExcel()" ${S.equipos.length===0?"disabled":""}
                     class="btn-accent" style="padding:7px 14px;font-size:11px;">↓ EXCEL (${S.equipos.length})</button>
             </div>
