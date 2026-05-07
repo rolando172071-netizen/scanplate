@@ -29,7 +29,7 @@
 
 const GEMINI_KEY = "AIzaSyD-xsjKnCSwSsUR-yP2AMRkjjvZG2VzIbE";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_KEY;
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycby1i74NMnTGrtG3-4BAkQXn9RTXh5WnMV6CmrzOqFdO_IMdE58fzi0bCxUbdRQPlekt/exec";
 const STORAGE_KEY = "scanplate_v5";
 
 const PROMPT = "Eres un experto tecnico en equipos industriales. Analiza esta imagen de una placa de datos y extrae todos los datos visibles. Devuelve UNICAMENTE un objeto JSON valido con estos campos exactos (usa null si no aplica): {\"tipo_equipo\":\"Motor electrico|Servomotor|Sensor|Variador|Otro\",\"marca\":\"\",\"modelo\":\"\",\"numero_serie\":\"\",\"potencia\":\"\",\"voltaje\":\"\",\"amperaje\":\"\",\"rpm\":\"\",\"frecuencia\":\"\",\"factor_potencia\":\"\",\"proteccion_ip\":\"\",\"clase_aislamiento\":\"\",\"fabricacion\":\"\",\"otros\":\"\"} No incluyas texto adicional, solo el JSON puro.";
