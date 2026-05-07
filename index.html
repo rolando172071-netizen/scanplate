@@ -12,11 +12,9 @@
     body { background: #080a0d; color: #ddd6c8; font-family: 'Courier New', monospace; min-height: 100vh; }
     input, button, textarea { font-family: 'Courier New', monospace; }
     input:focus, textarea:focus { outline: 1px solid #f59e0b; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
     @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
     @keyframes slideIn { from{transform:translateY(14px);opacity:0} to{transform:translateY(0);opacity:1} }
     .spin { animation: spin 2s linear infinite; display:inline-block; }
-    .pulse { animation: pulse 1.5s infinite; }
     .slide { animation: slideIn 0.3s ease; }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: #080a0d; }
@@ -27,13 +25,10 @@
 <div id="app"></div>
 <script>
 
-// ═══════════════════════════════════════════
-// CONFIGURACIÓN
-// ═══════════════════════════════════════════
-const GEMINI_KEY  = "AIzaSyD-xsjKnCSwSsUR-yP2AMRkjjvZG2VzIbE"; // Solo para parsear texto
+const SHEETS_URL  = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec";
+const GEMINI_KEY  = "AIzaSyD-xsjKnCSwSsUR-yP2AMRkjjvZG2VzIbE";
 const GEMINI_URL  = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_KEY;
-const SHEETS_URL  = "https://script.google.com/macros/s/AKfycby1i74NMnTGrtG3-4BAkQXn9RTXh5WnMV6CmrzOqFdO_IMdE58fzi0bCxUbdRQPlekt/exec";
-const STORAGE_KEY = "scanplate_v6";
+const STORAGE_KEY = "scanplate_v7";
 
 const MANUAL_FIELDS = [
   { key:"codigo_sap", label:"Código SAP",         placeholder:"Ej: SAP-001234" },
@@ -64,119 +59,82 @@ function emptyP() { return PLACA_FIELDS.reduce((a,f)=>({...a,[f.key]:""}),{}); }
 
 let S = {
   equipos:[], activeTab:"scan", loading:false, parsing:false,
-  preview:null, previewBase64:null, previewMime:null,
-  error:null, editingRow:null,
-  manualData:emptyM(), placaData:emptyP(),
-  textoLibre:"", sync:{},
+  preview:null, error:null, editingRow:null,
+  manualData:emptyM(), placaData:emptyP(), textoLibre:"",
 };
 
 try { const s=localStorage.getItem(STORAGE_KEY); if(s) S.equipos=JSON.parse(s); } catch(e){}
 
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S.equipos.map(e=>({...e,_img:undefined,_b64:undefined})))); } catch(e){}
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S.equipos.map(e=>({...e,_img:undefined})))); } catch(e){}
 }
 function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function set(u) { Object.assign(S,u); render(); }
 function render() { document.getElementById("app").innerHTML = ui(); }
 
-// ═══════════════════════════════════════════
-// FOTO
-// ═══════════════════════════════════════════
 function cargarFoto(file) {
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
-    const full = e.target.result;
-    const b64  = full.split(",")[1];
-    set({ preview:full, previewBase64:b64, previewMime:file.type||"image/jpeg" });
-  };
+  reader.onload = (e) => set({ preview: e.target.result });
   reader.readAsDataURL(file);
 }
 
-// ═══════════════════════════════════════════
-// PARSEAR TEXTO LIBRE CON GEMINI (solo texto)
-// ═══════════════════════════════════════════
 async function parsearTexto() {
   if(!S.textoLibre.trim()) return;
   set({parsing:true, error:null});
   const prompt = `Dado este texto con datos de un equipo industrial: "${S.textoLibre}"
 Extrae y devuelve SOLO un JSON con estos campos (null si no aplica):
-{"tipo_equipo":"","marca":"","modelo":"","numero_serie":"","potencia":"","voltaje":"","amperaje":"","rpm":"","frecuencia":"","factor_potencia":"","proteccion_ip":"","clase_aislamiento":"","fabricacion":"","otros":"(todo lo que no encaje en los campos anteriores)"}
-Solo el JSON, sin texto adicional.`;
-
+{"tipo_equipo":"","marca":"","modelo":"","numero_serie":"","potencia":"","voltaje":"","amperaje":"","rpm":"","frecuencia":"","factor_potencia":"","proteccion_ip":"","clase_aislamiento":"","fabricacion":"","otros":"(todo lo que no encaje va aqui)"}
+Solo el JSON puro, sin texto adicional ni backticks.`;
   try {
     const res  = await fetch(GEMINI_URL, {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:{temperature:0.1} })
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.1}})
     });
     const data = await res.json();
-    if(data.error){ set({parsing:false, error:"Error: "+data.error.message}); return; }
+    if(data.error){ set({parsing:false,error:"Gemini: "+data.error.message}); return; }
     const text   = data.candidates?.[0]?.content?.parts?.[0]?.text||"";
     const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
     const filled = {};
     PLACA_FIELDS.forEach(f=>{ filled[f.key]=parsed[f.key]||""; });
     set({placaData:filled, parsing:false, textoLibre:""});
   } catch(err) {
-    set({parsing:false, error:"No se pudo organizar el texto: "+err.message});
+    set({parsing:false, error:"Error al organizar: "+err.message});
   }
 }
 
-// ═══════════════════════════════════════════
-// GUARDAR + SYNC A SHEETS (con foto)
-// ═══════════════════════════════════════════
 async function guardar() {
   set({loading:true, error:null});
+  const entry = {
+    ...S.manualData, ...S.placaData,
+    _id:Date.now(), _fecha:new Date().toLocaleString("es-EC"), _img:S.preview,
+  };
+
+  // Enviar a Sheets con no-cors (funciona para enviar, no para recibir respuesta)
   try {
-    const payload = {
-      fecha:     new Date().toLocaleString("es-EC"),
-      ...S.manualData,
-      ...S.placaData,
-      photo_base64: S.previewBase64||"",
-      photo_mime:   S.previewMime||"image/jpeg",
-      photo_name:   "equipo_"+Date.now()+".jpg",
-    };
-
-    let photoLink = "";
-    if(SHEETS_URL) {
-      const res = await fetch(SHEETS_URL, {
-        method:"POST",
-        mode:"cors",
-        headers:{"Content-Type":"text/plain"},
-        body:JSON.stringify(payload),
-      });
-      try {
-        const data = await res.json();
-        photoLink = data.photoLink||"";
-      } catch(e){}
-    }
-
-    const entry = {
-      ...S.manualData,
-      ...S.placaData,
-      _id:       Date.now(),
-      _fecha:    payload.fecha,
-      _img:      S.preview,
-      _photoLink:photoLink,
-    };
-    S.equipos.push(entry);
-    save();
-    S.sync[entry._id] = "ok";
-    set({
-      manualData:emptyM(), placaData:emptyP(),
-      preview:null, previewBase64:null, previewMime:null,
-      textoLibre:"", loading:false, activeTab:"tabla",
+    const row = {fecha:entry._fecha};
+    MANUAL_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
+    PLACA_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
+    await fetch(SHEETS_URL, {
+      method:"POST", mode:"no-cors",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(row),
     });
-  } catch(err) {
-    set({loading:false, error:"Error al guardar: "+err.message});
-  }
+  } catch(e){}
+
+  S.equipos.push(entry);
+  save();
+  set({
+    manualData:emptyM(), placaData:emptyP(),
+    preview:null, textoLibre:"", loading:false, activeTab:"tabla",
+  });
 }
 
 function exportExcel() {
   const wb = XLSX.utils.book_new();
   function rows(lista) {
     return lista.map((eq,i)=>{
-      const r={"#":i+1,"Fecha":eq._fecha,"Foto":eq._photoLink||""};
+      const r={"#":i+1,"Fecha":eq._fecha};
       MANUAL_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
       PLACA_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
       return r;
@@ -194,15 +152,11 @@ function exportExcel() {
 function updateEq(id,key,val){ const e=S.equipos.find(e=>e._id===id); if(e){e[key]=val;save();} }
 function deleteEq(id){ if(confirm("¿Eliminar?")){ S.equipos=S.equipos.filter(e=>e._id!==id); save(); set({}); } }
 
-// ═══════════════════════════════════════════
-// UI
-// ═══════════════════════════════════════════
 function lbl(t){ return `<div style="color:#4b5563;font-size:9px;letter-spacing:1px;margin-bottom:4px;">${t}</div>`; }
 function sec(n,t,c){ c=c||"#f59e0b"; return `<div style="color:${c};font-size:9px;letter-spacing:3px;margin:18px 0 10px;border-bottom:1px solid ${c}33;padding-bottom:5px;">${n} ${t}</div>`; }
 function inp(val,ph,fn){ return `<input value="${esc(val)}" placeholder="${ph}" oninput="${fn}" style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:9px 10px;font-size:12px;width:100%;border-radius:2px;" />`; }
 
 function ui(){ return `<div style="min-height:100vh;background:#080a0d;color:#ddd6c8;">
-
   <div style="background:linear-gradient(180deg,#13181f,#0d1117);border-bottom:2px solid #f59e0b;padding:14px 16px;position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;">
     <div>
       <div style="color:#f59e0b;font-size:9px;letter-spacing:4px;">◈ INVENTARIO INDUSTRIAL</div>
@@ -241,26 +195,21 @@ function scanTab(){ return `<div style="padding:16px;">
   <input type="file" id="cam" accept="image/*" capture="environment" style="display:none" onchange="cargarFoto(this.files[0])" />
   <input type="file" id="gal" accept="image/*" style="display:none" onchange="cargarFoto(this.files[0])" />
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-    <button onclick="document.getElementById('cam').click()" style="background:#0d1117;border:2px solid #f59e0b;color:#f59e0b;padding:14px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">📷 CÁMARA</button>
-    <button onclick="document.getElementById('gal').click()" style="background:#0d1117;border:2px solid #374151;color:#9ca3af;padding:14px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">🖼️ GALERÍA</button>
+    <button onclick="document.getElementById('cam').click()" style="background:#0d1117;border:2px solid #f59e0b;color:#f59e0b;padding:14px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;">📷 CÁMARA</button>
+    <button onclick="document.getElementById('gal').click()" style="background:#0d1117;border:2px solid #374151;color:#9ca3af;padding:14px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;">🖼️ GALERÍA</button>
   </div>
-  ${S.preview?`
-  <div style="border:1px solid #22c55e;border-radius:4px;padding:10px;margin-bottom:12px;text-align:center;">
-    <img src="${S.preview}" style="max-height:150px;max-width:100%;border-radius:2px;" />
-    <div style="color:#22c55e;font-size:10px;margin-top:6px;">✓ FOTO LISTA — se subirá a Google Drive al guardar</div>
-  </div>`:`
-  <div style="border:1px dashed #374151;border-radius:4px;padding:20px;text-align:center;margin-bottom:12px;color:#4b5563;font-size:11px;">
-    Sin foto — opcional
-  </div>`}
+  ${S.preview
+    ? `<div style="border:1px solid #22c55e;border-radius:4px;padding:10px;margin-bottom:12px;text-align:center;"><img src="${S.preview}" style="max-height:150px;max-width:100%;border-radius:2px;" /><div style="color:#22c55e;font-size:10px;margin-top:6px;">✓ FOTO CARGADA</div></div>`
+    : `<div style="border:1px dashed #374151;border-radius:4px;padding:16px;text-align:center;margin-bottom:12px;color:#4b5563;font-size:11px;">Sin foto — opcional</div>`}
 
-  ${sec("③","DATOS DE LA PLACA — PEGA EL TEXTO Y ORDENA")}
+  ${sec("③","DATOS DE LA PLACA — PEGA Y ORGANIZA")}
   <div style="margin-bottom:10px;">
-    ${lbl("PEGA AQUÍ LOS DATOS DE LA PLACA (EN CUALQUIER FORMATO)")}
-    <textarea oninput="S.textoLibre=this.value" placeholder="Ej: Motor Siemens 5.5kW 220V 1750RPM IP55 serie A1B2C3D4..." rows="4"
-      style="background:#080a0d;border:1px solid #f59e0b33;color:#ddd6c8;padding:10px;font-size:12px;width:100%;border-radius:2px;resize:vertical;">${esc(S.textoLibre)}</textarea>
+    ${lbl("PEGA AQUÍ LOS DATOS (EN CUALQUIER FORMATO)")}
+    <textarea oninput="S.textoLibre=this.value" placeholder="Ej: Motor Siemens 5.5kW 220V 1750RPM IP55 serie A1B2C3..." rows="4"
+      style="background:#080a0d;border:1px solid #f59e0b55;color:#ddd6c8;padding:10px;font-size:12px;width:100%;border-radius:2px;resize:vertical;">${esc(S.textoLibre)}</textarea>
   </div>
   <button onclick="parsearTexto()" ${S.parsing?"disabled":""}
-    style="background:${S.parsing?"#1f2937":"#0d1117"};border:2px solid #f59e0b;color:#f59e0b;padding:10px;font-size:11px;cursor:pointer;border-radius:4px;width:100%;margin-bottom:16px;font-weight:bold;letter-spacing:1px;">
+    style="background:#0d1117;border:2px solid #f59e0b;color:#f59e0b;padding:10px;font-size:11px;cursor:pointer;border-radius:4px;width:100%;margin-bottom:16px;font-weight:bold;letter-spacing:1px;">
     ${S.parsing?`<span class="spin">⚙</span> ORGANIZANDO...`:"⚡ ORGANIZAR DATOS"}
   </button>
 
@@ -275,8 +224,8 @@ function scanTab(){ return `<div style="padding:16px;">
   </div>
 
   <button onclick="guardar()" ${S.loading?"disabled":""}
-    style="background:${S.loading?"#374151":"#f59e0b"};border:none;color:#000;padding:14px;font-size:13px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;width:100%;margin-top:20px;">
-    ${S.loading?`<span class="spin" style="color:#fff;">⚙</span> GUARDANDO...`:"+ GUARDAR EQUIPO"}
+    style="background:${S.loading?"#374151":"#f59e0b"};border:none;color:${S.loading?"#fff":"#000"};padding:14px;font-size:13px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;width:100%;margin-top:20px;">
+    ${S.loading?`<span class="spin">⚙</span> GUARDANDO...`:"+ GUARDAR EQUIPO"}
   </button>
 </div>`; }
 
@@ -297,7 +246,6 @@ function tablaTab(){
           ${eq.linea?`<span style="color:#22c55e;font-size:10px;margin-left:6px;">· ${esc(eq.linea)}</span>`:""}
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
-          ${eq._photoLink?`<a href="${esc(eq._photoLink)}" target="_blank" style="color:#60a5fa;font-size:9px;text-decoration:none;">📷 FOTO</a>`:""}
           <button onclick="set({editingRow:${ed?"null":eq._id}})" style="background:transparent;border:1px solid #374151;color:#9ca3af;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✎</button>
           <button onclick="deleteEq(${eq._id})" style="background:transparent;border:1px solid #374151;color:#ef4444;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✕</button>
         </div>
