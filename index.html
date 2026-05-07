@@ -1,280 +1,298 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>SCAN·PLATE — Inventario Industrial</title>
-  <meta name="theme-color" content="#f59e0b" />
-  <link rel="manifest" href="manifest.json" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #080a0d; color: #ddd6c8; font-family: 'Courier New', monospace; min-height: 100vh; }
-    input, button { font-family: 'Courier New', monospace; }
-    input:focus { outline: 1px solid #f59e0b; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-    @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-    @keyframes slideIn { from{transform:translateY(14px);opacity:0} to{transform:translateY(0);opacity:1} }
-    .spin { animation: spin 2s linear infinite; display:inline-block; }
-    .pulse { animation: pulse 1.5s infinite; }
-    .slide { animation: slideIn 0.3s ease; }
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: #080a0d; }
-    ::-webkit-scrollbar-thumb { background: #374151; }
-  </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>SCAN·PLATE — Inventario Industrial</title>
+    <meta name="theme-color" content="#f59e0b" />
+    <link rel="manifest" href="manifest.json" />
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js">
+    </script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js">
+    </script>
+    <style>
+        :root { --bg: #080a0d; --card: #0d1117; --border: #1f2937; --accent: #f59e0b; --text: #ddd6c8; --muted: #4b5563; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Courier New', monospace; min-height: 100vh; }
+        input, button { font-family: 'Courier New', monospace; }
+        input:focus { outline: 1px solid var(--accent); }
+        button { cursor: pointer; transition: all 0.2s; }
+        .spin { animation: spin 2s linear infinite; display: inline-block; }
+        .pulse { animation: pulse 1.5s infinite; }
+        .slide { animation: slideIn 0.3s ease; }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes slideIn { from{transform:translateY(14px);opacity:0} to{transform:translateY(0);opacity:1} }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); }
+        .btn-accent { background: var(--accent); color:#000; border:none; font-weight:bold; }
+        .btn-accent:disabled { opacity:0.5; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 4px; }
+    </style>
 </head>
 <body>
 <div id="app"></div>
+
 <script>
+// ============ CONFIGURACIÓN (CAMBIA SOLO ESTO) ============
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec"; // ← PON AQUÍ TU URL
 
-const GEMINI_KEY = "AIzaSyCeHGskmOmoYgjb7CJO_nqqutH3J9b7wUs";
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GEMINI_KEY;
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxjGCUU35c2G_rWmcudodip1Go1ZzehALQ7ZZuMZbSU3Eq_HTpp59XJB15wq6uVR1dM/exec";
-const STORAGE_KEY = "scanplate_v5";
+const STORAGE_KEY = "scanplate_ocr_v2";
+const PROMPT_OCR = ""; // No se usa, era para Gemini
 
-const PROMPT = "Eres un experto tecnico en equipos industriales. Analiza esta imagen de una placa de datos y extrae todos los datos visibles. Devuelve UNICAMENTE un objeto JSON valido con estos campos exactos (usa null si no aplica): {\"tipo_equipo\":\"Motor electrico|Servomotor|Sensor|Variador|Otro\",\"marca\":\"\",\"modelo\":\"\",\"numero_serie\":\"\",\"potencia\":\"\",\"voltaje\":\"\",\"amperaje\":\"\",\"rpm\":\"\",\"frecuencia\":\"\",\"factor_potencia\":\"\",\"proteccion_ip\":\"\",\"clase_aislamiento\":\"\",\"fabricacion\":\"\",\"otros\":\"\"} No incluyas texto adicional, solo el JSON puro.";
-
+// Campos manuales (identificación)
 const MANUAL_FIELDS = [
-  { key:"codigo_sap",  label:"Código SAP",          placeholder:"Ej: SAP-001234" },
-  { key:"funcion",     label:"Función del Equipo",   placeholder:"Ej: Bomba de enfriamiento" },
-  { key:"maquina",     label:"Máquina",              placeholder:"Ej: Extrusora #3" },
-  { key:"linea",       label:"Línea de Producción",  placeholder:"Ej: Línea 1" },
+    { key: "codigo_sap", label: "Código SAP", placeholder: "Ej: SAP-001234" },
+    { key: "funcion",    label: "Función del Equipo", placeholder: "Ej: Bomba de enfriamiento" },
+    { key: "maquina",    label: "Máquina", placeholder: "Ej: Extrusora #3" },
+    { key: "linea",      label: "Línea de Producción", placeholder: "Ej: Línea 1" },
 ];
 
+// Campos de placa (se llenan con OCR o manualmente)
 const PLACA_FIELDS = [
-  { key:"tipo_equipo",       label:"Tipo de Equipo",     placeholder:"Motor / Servo / Sensor..." },
-  { key:"marca",             label:"Marca",              placeholder:"Ej: Siemens" },
-  { key:"modelo",            label:"Modelo",             placeholder:"Ej: 1LE0001" },
-  { key:"numero_serie",      label:"N° Serie",           placeholder:"Ej: A1B2C3D4" },
-  { key:"potencia",          label:"Potencia (HP/kW)",   placeholder:"Ej: 5.5 kW" },
-  { key:"voltaje",           label:"Voltaje (V)",        placeholder:"Ej: 220/380V" },
-  { key:"amperaje",          label:"Amperaje (A)",       placeholder:"Ej: 12.5 A" },
-  { key:"rpm",               label:"RPM",                placeholder:"Ej: 1750" },
-  { key:"frecuencia",        label:"Frecuencia (Hz)",    placeholder:"Ej: 60 Hz" },
-  { key:"factor_potencia",   label:"Factor de Potencia", placeholder:"Ej: 0.85" },
-  { key:"proteccion_ip",     label:"Protección IP",      placeholder:"Ej: IP55" },
-  { key:"clase_aislamiento", label:"Clase Aislamiento",  placeholder:"Ej: Clase F" },
-  { key:"fabricacion",       label:"Año Fabricación",    placeholder:"Ej: 2018" },
-  { key:"otros",             label:"Otros Datos",        placeholder:"Cualquier dato adicional..." },
+    { key: "tipo_equipo",       label: "Tipo de Equipo", placeholder: "Motor / Servo / Sensor..." },
+    { key: "marca",             label: "Marca", placeholder: "Ej: Siemens" },
+    { key: "modelo",            label: "Modelo", placeholder: "Ej: 1LE0001" },
+    { key: "numero_serie",      label: "N° Serie", placeholder: "Ej: A1B2C3D4" },
+    { key: "potencia",          label: "Potencia (HP/kW)", placeholder: "Ej: 5.5 kW" },
+    { key: "voltaje",           label: "Voltaje (V)", placeholder: "Ej: 220/380V" },
+    { key: "amperaje",          label: "Amperaje (A)", placeholder: "Ej: 12.5 A" },
+    { key: "rpm",               label: "RPM", placeholder: "Ej: 1750" },
+    { key: "frecuencia",        label: "Frecuencia (Hz)", placeholder: "Ej: 60 Hz" },
+    { key: "factor_potencia",   label: "Factor de Potencia", placeholder: "Ej: 0.85" },
+    { key: "proteccion_ip",     label: "Protección IP", placeholder: "Ej: IP55" },
+    { key: "clase_aislamiento", label: "Clase Aislamiento", placeholder: "Ej: Clase F" },
+    { key: "fabricacion",       label: "Año Fabricación", placeholder: "Ej: 2018" },
+    { key: "otros",             label: "Otros Datos", placeholder: "Cualquier dato adicional..." },
 ];
 
+// ============ ESTADO ============
 function emptyM() { return MANUAL_FIELDS.reduce((a,f)=>({...a,[f.key]:""}),{}); }
 function emptyP() { return PLACA_FIELDS.reduce((a,f)=>({...a,[f.key]:""}),{}); }
 
 let S = {
-  equipos:[], activeTab:"scan", loading:false, preview:null,
-  error:null, manualMode:false, placaOk:false, editingRow:null,
-  manualData:emptyM(), placaData:emptyP(), sync:{},
+    equipos: [],
+    activeTab: "scan",
+    loading: false,
+    preview: null,
+    ocrText: "",          // texto crudo del OCR
+    error: null,
+    manualMode: false,
+    editingRow: null,
+    manualData: emptyM(),
+    placaData: emptyP(),
+    sync: {},
 };
 
-try { const s=localStorage.getItem(STORAGE_KEY); if(s) S.equipos=JSON.parse(s); } catch(e){}
+try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) S.equipos = JSON.parse(saved);
+} catch(e) {}
 
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(S.equipos.map(e=>({...e,_img:undefined})))); } catch(e){}
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(S.equipos));
 }
 
-function x(s) {
-  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+function x(str) {
+    return String(str||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-function set(u) { Object.assign(S,u); render(); }
-function render() { document.getElementById("app").innerHTML = ui(); }
+function set(updates) { Object.assign(S, updates); render(); }
+
+// ============ OCR CON TESSERACT ============
+let ocrWorker = null;
+
+async function initOCR() {
+    if (ocrWorker) return ocrWorker;
+    ocrWorker = await Tesseract.createWorker('spa'); // español, puedes cambiar a 'eng'
+    return ocrWorker;
+}
 
 async function procesarImagen(file) {
-  if(!file) return;
-  set({loading:true, error:null, placaOk:false});
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const b64 = e.target.result.split(",")[1];
-    S.preview = e.target.result;
+    if (!file) return;
+    set({ loading: true, error: null, ocrText: "" });
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        S.preview = e.target.result;
+        render();
+        try {
+            const worker = await initOCR();
+            const { data: { text } } = await worker.recognize(file);
+            S.ocrText = text.trim();
+            set({ loading: false });
+            // Si hay texto, mostrarlo y activar modo manual para que el usuario complete
+            if (S.ocrText) {
+                set({ manualMode: true });
+            } else {
+                set({ error: "No se detectó texto. Completa manualmente.", manualMode: false });
+            }
+        } catch (err) {
+            set({ loading: false, error: "Error OCR: " + err.message, manualMode: false });
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// ============ ENVÍO A GOOGLE SHEETS ============
+async function syncSheets(entry) {
+    if (!SHEETS_URL || SHEETS_URL.includes("TU_NUEVO_SCRIPT_ID")) {
+        console.warn("URL de Sheets no configurada.");
+        return;
+    }
+    S.sync[entry._id] = "syncing";
     render();
     try {
-      const res = await fetch(GEMINI_URL, {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          contents:[{parts:[
-            {inline_data:{mime_type:file.type||"image/jpeg",data:b64}},
-            {text:PROMPT}
-          ]}],
-          generationConfig:{temperature:0.1}
-        })
-      });
-      const data = await res.json();
-      if(data.error){set({error:"Error Gemini: "+data.error.message,manualMode:true,loading:false});return;}
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text||"";
-      if(!text){set({error:"Gemini no respondio. Intenta con otra foto.",manualMode:true,loading:false});return;}
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
-      const filled = {};
-      PLACA_FIELDS.forEach(f=>{ filled[f.key]=parsed[f.key]||""; });
-      set({placaData:filled, placaOk:true, manualMode:false, loading:false});
-    } catch(err) {
-      set({error:"Error: "+err.message,manualMode:true,loading:false});
+        const payload = { fecha: entry._fecha };
+        MANUAL_FIELDS.forEach(f => payload[f.key] = entry[f.key] || "");
+        PLACA_FIELDS.forEach(f => payload[f.key] = entry[f.key] || "");
+        const res = await fetch(SHEETS_URL, {
+            method: "POST",
+            mode: "cors",     // ← importante: quitar no-cors
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+            const data = await res.json();
+            S.sync[entry._id] = data.result === "ok" ? "ok" : "error";
+        } else {
+            S.sync[entry._id] = "error";
+        }
+    } catch(e) {
+        S.sync[entry._id] = "error";
     }
-  };
-  reader.readAsDataURL(file);
+    render();
 }
 
-async function syncSheets(entry) {
-  if(!SHEETS_URL) return;
-  S.sync[entry._id]="syncing"; render();
-  try {
-    const row={fecha:entry._fecha};
-    MANUAL_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
-    PLACA_FIELDS.forEach(f=>row[f.key]=entry[f.key]||"");
-    await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(row)});
-    S.sync[entry._id]="ok";
-  } catch(e) { S.sync[entry._id]="error"; }
-  render();
-}
-
+// ============ GUARDAR EQUIPO ============
 function guardar() {
-  const e={...S.manualData,...S.placaData,_id:Date.now(),_fecha:new Date().toLocaleString("es-EC")};
-  S.equipos.push(e); save(); syncSheets(e);
-  set({manualData:emptyM(),placaData:emptyP(),preview:null,placaOk:false,manualMode:false,activeTab:"tabla"});
+    const entry = {
+        ...S.manualData,
+        ...S.placaData,
+        _id: Date.now(),
+        _fecha: new Date().toLocaleString("es-EC")
+    };
+    S.equipos.push(entry);
+    save();
+    syncSheets(entry);
+    set({ manualData: emptyM(), placaData: emptyP(), preview: null, ocrText:"", error:null, manualMode:false, activeTab:"tabla" });
 }
 
-function exportExcel() {
-  const wb = XLSX.utils.book_new();
-  function rows(lista) {
-    return lista.map((eq,i)=>{
-      const r={"#":i+1,"Fecha":eq._fecha};
-      MANUAL_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
-      PLACA_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
-      return r;
-    });
-  }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows(S.equipos)), "Todos los Equipos");
-  const lineas={};
-  S.equipos.forEach(eq=>{ const l=(eq.linea||"Sin Línea").trim(); if(!lineas[l]) lineas[l]=[]; lineas[l].push(eq); });
-  Object.entries(lineas).forEach(([l,lista])=>{
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows(lista)), l.substring(0,31));
-  });
-  XLSX.writeFile(wb,"inventario_equipos_"+Date.now()+".xlsx");
-}
-
-function updateEq(id,key,val) {
-  const e=S.equipos.find(e=>e._id===id);
-  if(e){e[key]=val;save();}
+function updateEq(id, key, val) {
+    const eq = S.equipos.find(e => e._id === id);
+    if (eq) { eq[key] = val; save(); }
 }
 
 function deleteEq(id) {
-  if(confirm("¿Eliminar este equipo?")){ S.equipos=S.equipos.filter(e=>e._id!==id); save(); set({}); }
+    if (confirm("¿Eliminar este equipo?")) {
+        S.equipos = S.equipos.filter(e => e._id !== id);
+        save();
+        set({});
+    }
 }
 
-function ui() {
-  return `<div style="min-height:100vh;background:#080a0d;color:#ddd6c8;">
-
-  <div style="background:linear-gradient(180deg,#13181f,#0d1117);border-bottom:2px solid #f59e0b;padding:14px 16px;position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;">
-    <div>
-      <div style="color:#f59e0b;font-size:9px;letter-spacing:4px;">◈ INVENTARIO INDUSTRIAL</div>
-      <div style="font-size:20px;font-weight:bold;color:#fff;letter-spacing:2px;">SCAN·PLATE</div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <span style="background:#0d2210;border:1px solid #22c55e;border-radius:2px;padding:4px 8px;font-size:9px;color:#22c55e;">⬡ GEMINI</span>
-      <button onclick="exportExcel()" ${S.equipos.length===0?"disabled":""}
-        style="background:${S.equipos.length>0?"#f59e0b":"#1f2937"};color:${S.equipos.length>0?"#000":"#4b5563"};border:none;padding:7px 14px;font-size:11px;font-weight:bold;cursor:pointer;border-radius:2px;letter-spacing:1px;">
-        ↓ EXCEL (${S.equipos.length})
-      </button>
-    </div>
-  </div>
-
-  <div style="display:flex;border-bottom:1px solid #1f2937;">
-    ${["scan","tabla"].map(t=>`
-      <button onclick="set({activeTab:'${t}',editingRow:null})"
-        style="flex:1;padding:11px;background:${S.activeTab===t?"#0d1117":"transparent"};border:none;border-bottom:2px solid ${S.activeTab===t?"#f59e0b":"transparent"};color:${S.activeTab===t?"#f59e0b":"#4b5563"};font-size:10px;letter-spacing:2px;cursor:pointer;font-weight:bold;">
-        ${t==="scan"?"◈ NUEVO EQUIPO":"▤ REGISTROS ("+S.equipos.length+")"}
-      </button>`).join("")}
-  </div>
-
-  ${S.activeTab==="scan" ? scanTab() : tablaTab()}
-  </div>`;
+// ============ EXPORTAR EXCEL (SIN DEPENDER DE SHEETS) ============
+function exportExcel() {
+    const wb = XLSX.utils.book_new();
+    function rows(lista) {
+        return lista.map((eq,i) => {
+            const r = {"#": i+1, "Fecha": eq._fecha};
+            MANUAL_FIELDS.forEach(f => r[f.label] = eq[f.key] || "");
+            PLACA_FIELDS.forEach(f => r[f.label] = eq[f.key] || "");
+            return r;
+        });
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows(S.equipos)), "Inventario");
+    XLSX.writeFile(wb, "inventario_placas.xlsx");
 }
 
-function field(label) { return `<div style="color:#4b5563;font-size:9px;letter-spacing:1px;margin-bottom:4px;">${label}</div>`; }
-function inp2(key,val,ph,fn) { return `<input value="${x(val)}" placeholder="${ph}" oninput="${fn}" style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:9px 10px;font-size:12px;width:100%;border-radius:2px;" />`; }
-function sec(n,t,c) { c=c||"#f59e0b"; return `<div style="color:${c};font-size:9px;letter-spacing:3px;margin:18px 0 10px;border-bottom:1px solid ${c}33;padding-bottom:5px;">${n} ${t}</div>`; }
+// ============ UI (manteniendo tu estilo original) ============
+function field(label) { return `<div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:4px;">${label}</div>`; }
+function inp2(key, val, ph, fn) {
+    return `<input value="${x(val)}" placeholder="${ph}" oninput="${fn}" style="background:#080a0d;border:1px solid var(--border);color:var(--text);padding:9px 10px;font-size:12px;width:100%;border-radius:2px;" />`;
+}
 
 function scanTab() {
-  return `<div style="padding:16px;">
-  ${sec("①","DATOS DE IDENTIFICACIÓN — LLENAR A MANO")}
-  ${MANUAL_FIELDS.map(f=>`<div style="margin-bottom:10px;">${field(f.label.toUpperCase())}${inp2(f.key,S.manualData[f.key]||"",f.placeholder,"S.manualData['"+f.key+"']=this.value")}</div>`).join("")}
-  ${sec("②","DATOS DE PLACA")}
-  <input type="file" id="cam" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(this.files[0])" />
-  <input type="file" id="gal" accept="image/*" style="display:none" onchange="procesarImagen(this.files[0])" />
-  ${!S.loading?`
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-    <button onclick="document.getElementById('cam').click()" style="background:#0d1117;border:2px solid #f59e0b;color:#f59e0b;padding:16px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">📷 CÁMARA</button>
-    <button onclick="document.getElementById('gal').click()" style="background:#0d1117;border:2px solid #374151;color:#9ca3af;padding:16px 8px;font-size:11px;cursor:pointer;border-radius:4px;font-weight:bold;letter-spacing:1px;">🖼️ GALERÍA</button>
-  </div>`:""}
-  ${S.loading?`
-  <div style="border:1px solid #374151;border-radius:4px;padding:20px;text-align:center;margin-bottom:12px;">
-    ${S.preview?`<img src="${S.preview}" style="max-height:130px;max-width:100%;border-radius:2px;margin-bottom:8px;" />`:""}
-    <div class="spin" style="font-size:28px;">⚙</div>
-    <div class="pulse" style="color:#f59e0b;font-size:11px;letter-spacing:2px;margin-top:6px;">LEYENDO PLACA CON IA...</div>
-    <div style="color:#4b5563;font-size:10px;margin-top:4px;">Gemini está analizando la imagen</div>
-  </div>`:S.preview?`
-  <div style="border:1px solid ${S.placaOk?"#22c55e":"#374151"};border-radius:4px;padding:12px;margin-bottom:12px;text-align:center;">
-    <img src="${S.preview}" style="max-height:130px;max-width:100%;border-radius:2px;margin-bottom:8px;" />
-    ${S.placaOk?`<div style="color:#22c55e;font-size:11px;">✓ PLACA LEÍDA CORRECTAMENTE</div>`:""}
-  </div>`:""}
-  ${S.error?`<div style="background:#2d0f0f;border:1px solid #ef4444;color:#ef4444;padding:10px;border-radius:4px;font-size:11px;margin-bottom:10px;">⚠ ${x(S.error)}</div>`:""}
-  <button onclick="set({manualMode:${!S.manualMode}})" style="background:transparent;border:1px solid ${S.manualMode?"#f59e0b":"#374151"};color:${S.manualMode?"#f59e0b":"#6b7280"};padding:8px 12px;font-size:10px;cursor:pointer;border-radius:2px;letter-spacing:1px;width:100%;margin-bottom:12px;">
-    ${S.manualMode?"▲ OCULTAR CAMPOS MANUALES":"✎ PLACA NO LEGIBLE — INGRESAR A MANO"}
-  </button>
-  ${(S.placaOk||S.manualMode)?`
-  <div class="slide" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-    ${PLACA_FIELDS.map(f=>`<div style="grid-column:${f.key==="otros"?"span 2":"span 1"}">${field(f.label.toUpperCase())}${inp2(f.key,S.placaData[f.key]||"",f.placeholder,"S.placaData['"+f.key+"']=this.value")}</div>`).join("")}
-  </div>`:""}
-  <button onclick="guardar()" style="background:#f59e0b;border:none;color:#000;padding:14px;font-size:13px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;width:100%;margin-top:20px;">
-    + GUARDAR EQUIPO
-  </button>
-  </div>`;
+    return `<div style="padding:16px;">
+    <div style="color:var(--accent);font-size:9px;letter-spacing:3px;margin-bottom:10px;">① DATOS DE IDENTIFICACIÓN</div>
+    ${MANUAL_FIELDS.map(f=>`<div style="margin-bottom:10px;">${field(f.label.toUpperCase())}${inp2(f.key,S.manualData[f.key]||"",f.placeholder,"S.manualData['"+f.key+"']=this.value")}</div>`).join("")}
+    <div style="color:var(--accent);font-size:9px;letter-spacing:3px;margin:18px 0 10px;">② LECTURA DE PLACA (OCR)</div>
+    <input type="file" id="cam" accept="image/*" capture="environment" style="display:none" onchange="procesarImagen(this.files[0])" />
+    <input type="file" id="gal" accept="image/*" style="display:none" onchange="procesarImagen(this.files[0])" />
+    ${!S.loading ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <button onclick="document.getElementById('cam').click()" style="background:var(--card);border:2px solid var(--accent);color:var(--accent);padding:16px;font-size:11px;font-weight:bold;">📷 CÁMARA</button>
+        <button onclick="document.getElementById('gal').click()" style="background:var(--card);border:2px solid var(--border);color:#9ca3af;padding:16px;font-size:11px;font-weight:bold;">🖼️ GALERÍA</button>
+    </div>` : ''}
+    ${S.loading ? `<div class="card" style="padding:20px;text-align:center;"><span class="spin">⚙</span><div class="pulse" style="color:var(--accent);">LEYENDO PLACA...</div></div>` :
+      S.preview ? `<div class="card" style="padding:12px;text-align:center;margin-bottom:12px;"><img src="${S.preview}" style="max-height:130px;max-width:100%;border-radius:2px;" /><div style="color:#22c55e;margin-top:6px;font-size:11px;">✓ IMAGEN CARGADA</div></div>` : ''}
+    ${S.ocrText ? `<div class="card" style="padding:10px;margin-bottom:10px;"><span style="color:var(--accent);">Texto detectado:</span><br/><span style="font-size:11px;">${x(S.ocrText)}</span></div>` : ''}
+    ${S.error ? `<div style="background:#2d0f0f;border:1px solid #ef4444;color:#ef4444;padding:10px;border-radius:4px;font-size:11px;margin-bottom:10px;">⚠ ${x(S.error)}</div>` : ''}
+    <button onclick="set({manualMode:!S.manualMode})" style="background:transparent;border:1px solid ${S.manualMode?'var(--accent)':'var(--border)'};color:${S.manualMode?'var(--accent)':'#6b7280'};padding:8px;width:100%;margin-bottom:12px;font-size:10px;">
+        ${S.manualMode ? '▲ OCULTAR CAMPOS DE PLACA' : '✎ LLENAR DATOS DE PLACA MANUALMENTE'}
+    </button>
+    ${S.manualMode ? `<div class="slide" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">${PLACA_FIELDS.map(f=>`<div style="grid-column:${f.key==='otros'?'span 2':'span 1'}">${field(f.label.toUpperCase())}${inp2(f.key,S.placaData[f.key]||"",f.placeholder,"S.placaData['"+f.key+"']=this.value")}</div>`).join("")}</div>` : ''}
+    <button onclick="guardar()" class="btn-accent" style="width:100%;padding:14px;margin-top:20px;font-size:13px;">+ GUARDAR EQUIPO</button>
+    </div>`;
 }
 
 function tablaTab() {
-  if(S.equipos.length===0) return `<div style="text-align:center;padding:60px 20px;color:#1f2937;"><div style="font-size:48px;">▤</div><div style="font-size:12px;letter-spacing:2px;margin-top:12px;">SIN REGISTROS</div></div>`;
-  return `<div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
-  ${S.equipos.map((eq,i)=>{
-    const ed=S.editingRow===eq._id;
-    const sy=S.sync[eq._id];
-    const badge=sy==="ok"?`<span style="color:#22c55e;font-size:9px;">⬡ OK</span>`:sy==="error"?`<span style="color:#ef4444;font-size:9px;">⚠</span>`:sy==="syncing"?`<span class="spin" style="color:#60a5fa;font-size:9px;display:inline-block;">↻</span>`:`<span style="color:#374151;font-size:9px;">◌</span>`;
-    const fld=(f,c)=>ed?`<input value="${x(eq[f.key]||"")}" oninput="updateEq(${eq._id},'${f.key}',this.value)" style="background:#080a0d;border:1px solid #1f2937;color:#ddd6c8;padding:4px 6px;font-size:11px;width:100%;border-radius:2px;" />`:`<div style="color:${eq[f.key]?(c||"#ddd6c8"):"#1f2937"};font-size:11px;font-weight:${c==="22c55e"?"bold":"normal"};">${x(eq[f.key]||"—")}</div>`;
-    return `<div class="slide" style="background:#0d1117;border:1px solid ${ed?"#f59e0b":"#1f2937"};border-radius:4px;overflow:hidden;">
-      <div style="background:#13181f;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <span style="color:#f59e0b;font-size:10px;">#${String(i+1).padStart(3,"0")} </span>
-          <span style="color:#fff;font-size:12px;font-weight:bold;">${x(eq.tipo_equipo||"Equipo")} — ${x(eq.marca||"—")}</span>
-          ${eq.linea?`<span style="color:#22c55e;font-size:10px;margin-left:6px;">· ${x(eq.linea)}</span>`:""}
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;">
-          ${badge}
-          <button onclick="set({editingRow:${ed?"null":eq._id}})" style="background:transparent;border:1px solid #374151;color:#9ca3af;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✎</button>
-          <button onclick="deleteEq(${eq._id})" style="background:transparent;border:1px solid #374151;color:#ef4444;padding:3px 8px;font-size:10px;cursor:pointer;border-radius:2px;">✕</button>
-        </div>
-      </div>
-      <div style="padding:10px 12px;background:#090f09;border-bottom:1px solid #1f2937;">
-        <div style="color:#22c55e;font-size:9px;letter-spacing:2px;margin-bottom:6px;">IDENTIFICACIÓN</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          ${MANUAL_FIELDS.map(f=>`<div>${field(f.label.toUpperCase())}${fld(f,"#22c55e")}</div>`).join("")}
-        </div>
-      </div>
-      <div style="padding:10px 12px;">
-        <div style="color:#f59e0b;font-size:9px;letter-spacing:2px;margin-bottom:6px;">DATOS DE PLACA</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          ${PLACA_FIELDS.map(f=>`<div style="grid-column:${f.key==="otros"?"span 2":"span 1"}">${field(f.label.toUpperCase())}${fld(f)}</div>`).join("")}
-        </div>
-      </div>
-      <div style="padding:5px 12px;border-top:1px solid #1f2937;color:#374151;font-size:9px;">${x(eq._fecha)}</div>
+    if (S.equipos.length === 0) return `<div style="text-align:center;padding:60px;color:var(--muted);">▤ SIN REGISTROS</div>`;
+    return `<div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+    ${S.equipos.map((eq,i)=>{
+        const ed = S.editingRow === eq._id;
+        const sy = S.sync[eq._id];
+        const badge = sy==="ok"?`<span style="color:#22c55e;">⬡ OK</span>`:sy==="error"?`<span style="color:#ef4444;">⚠</span>`:sy==="syncing"?`<span class="spin" style="color:#60a5fa;">↻</span>`:`<span style="color:var(--muted);">◌</span>`;
+        const fld = (f, c) => ed ? `<input value="${x(eq[f.key]||'')}" oninput="updateEq(${eq._id},'${f.key}',this.value)" style="background:#080a0d;border:1px solid var(--border);color:var(--text);padding:4px;font-size:11px;width:100%;" />`
+                                 : `<div style="color:${eq[f.key]?(c||'var(--text)'):'var(--muted)'};">${x(eq[f.key]||'—')}</div>`;
+        return `<div class="slide card" style="overflow:hidden;">
+            <div style="background:#13181f;padding:10px;display:flex;justify-content:space-between;">
+                <div>
+                    <span style="color:var(--accent);font-size:10px;">#${String(i+1).padStart(3,'0')} </span>
+                    <span style="color:#fff;font-size:12px;font-weight:bold;">${x(eq.tipo_equipo||'Equipo')} — ${x(eq.marca||'—')}</span>
+                    ${eq.linea?`<span style="color:#22c55e;font-size:10px;margin-left:6px;">· ${x(eq.linea)}</span>`:''}
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                    ${badge}
+                    <button onclick="set({editingRow:${ed?null:eq._id}})" style="background:transparent;border:1px solid var(--border);color:#9ca3af;padding:3px 8px;">✎</button>
+                    <button onclick="deleteEq(${eq._id})" style="background:transparent;border:1px solid var(--border);color:#ef4444;padding:3px 8px;">✕</button>
+                </div>
+            </div>
+            <div style="padding:10px;background:#090f09;border-bottom:1px solid var(--border);">
+                <div style="color:#22c55e;font-size:9px;">IDENTIFICACIÓN</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">${MANUAL_FIELDS.map(f=>`<div>${field(f.label.toUpperCase())}${fld(f,'#22c55e')}</div>`).join("")}</div>
+            </div>
+            <div style="padding:10px;">
+                <div style="color:var(--accent);font-size:9px;">DATOS DE PLACA</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">${PLACA_FIELDS.map(f=>`<div style="grid-column:${f.key==='otros'?'span 2':'span 1'}">${field(f.label.toUpperCase())}${fld(f)}</div>`).join("")}</div>
+            </div>
+            <div style="padding:5px 10px;border-top:1px solid var(--border);color:var(--muted);font-size:9px;">${x(eq._fecha)}</div>
+        </div>`;
+    }).join("")}
+    <button onclick="exportExcel()" class="btn-accent" style="padding:14px;margin-top:4px;">↓ EXPORTAR A EXCEL</button>
     </div>`;
-  }).join("")}
-  <button onclick="exportExcel()" style="background:#f59e0b;border:none;color:#000;padding:14px;font-size:12px;font-weight:bold;letter-spacing:2px;cursor:pointer;border-radius:4px;margin-top:4px;">
-    ↓ EXPORTAR ${S.equipos.length} EQUIPO${S.equipos.length!==1?"S":""} A EXCEL
-  </button>
-  <button onclick="if(confirm('¿Borrar todos los registros?')){S.equipos=[];save();set({})}" style="background:transparent;border:1px solid #1f2937;color:#4b5563;padding:10px;font-size:10px;cursor:pointer;border-radius:4px;letter-spacing:1px;">
-    ✕ LIMPIAR TODOS
-  </button>
-  </div>`;
+}
+
+function render() {
+    document.getElementById("app").innerHTML = `
+    <div style="min-height:100vh;background:#080a0d;color:var(--text);">
+        <div style="background:linear-gradient(180deg,#13181f,#0d1117);border-bottom:2px solid var(--accent);padding:14px 16px;position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div style="color:var(--accent);font-size:9px;letter-spacing:4px;">◈ INVENTARIO INDUSTRIAL</div>
+                <div style="font-size:20px;font-weight:bold;color:#fff;letter-spacing:2px;">SCAN·PLATE</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <span style="background:#0d2210;border:1px solid #22c55e;border-radius:2px;padding:4px 8px;font-size:9px;color:#22c55e;">⬡ OCR GRATIS</span>
+                <button onclick="exportExcel()" ${S.equipos.length===0?"disabled":""}
+                    class="btn-accent" style="padding:7px 14px;font-size:11px;">↓ EXCEL (${S.equipos.length})</button>
+            </div>
+        </div>
+        <div style="display:flex;border-bottom:1px solid var(--border);">
+            <button onclick="set({activeTab:'scan',editingRow:null})" style="flex:1;padding:11px;background:${S.activeTab==='scan'?'#0d1117':'transparent'};border:none;border-bottom:2px solid ${S.activeTab==='scan'?'var(--accent)':'transparent'};color:${S.activeTab==='scan'?'var(--accent)':'var(--muted)'};font-size:10px;letter-spacing:2px;font-weight:bold;">◈ NUEVO EQUIPO</button>
+            <button onclick="set({activeTab:'tabla',editingRow:null})" style="flex:1;padding:11px;background:${S.activeTab==='tabla'?'#0d1117':'transparent'};border:none;border-bottom:2px solid ${S.activeTab==='tabla'?'var(--accent)':'transparent'};color:${S.activeTab==='tabla'?'var(--accent)':'var(--muted)'};font-size:10px;letter-spacing:2px;font-weight:bold;">▤ REGISTROS (${S.equipos.length})</button>
+        </div>
+        ${S.activeTab==='scan' ? scanTab() : tablaTab()}
+    </div>`;
 }
 
 render();
