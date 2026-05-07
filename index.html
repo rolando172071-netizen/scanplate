@@ -120,14 +120,15 @@ async function guardar() {
     row.photo_name   = "equipo_"+entry._id+".jpg";
     const res = await fetch(SHEETS_URL, {
       method:"POST",
-      headers:{"Content-Type":"text/plain"},
+      mode:"cors",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
       body:JSON.stringify(row),
     });
-    try {
+    if(res.ok){
       const data = await res.json();
       entry._photoLink = data.photoLink||"";
-    } catch(e){}
-  } catch(err){ console.log(err); }
+    }
+  } catch(err){ console.log("Sheets error:",err); }
 
   S.equipos.push(entry);
   save();
