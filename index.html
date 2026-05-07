@@ -145,6 +145,7 @@ function exportExcel() {
       const r={"#":i+1,"Fecha":eq._fecha};
       MANUAL_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
       PLACA_FIELDS.forEach(f=>r[f.label]=eq[f.key]||"");
+      r["Foto (Drive)"] = eq._photoLink||"";
       return r;
     });
   }
@@ -259,6 +260,7 @@ function tablaTab(){
         </div>
       </div>
       ${eq._img?`<div style="padding:8px 12px;background:#090909;border-bottom:1px solid #1f2937;"><img src="${eq._img}" style="max-height:80px;border-radius:2px;" /></div>`:""}
+      ${eq._photoLink?`<div style="padding:6px 12px;background:#090909;border-bottom:1px solid #1f2937;display:flex;align-items:center;gap:8px;"><span style="color:#4b5563;font-size:9px;">FOTO DRIVE:</span><a href="${eq._photoLink}" target="_blank" style="color:#60a5fa;font-size:10px;word-break:break-all;">${eq._photoLink}</a></div>`:""}
       <div style="padding:10px 12px;background:#090f09;border-bottom:1px solid #1f2937;">
         <div style="color:#22c55e;font-size:9px;letter-spacing:2px;margin-bottom:6px;">IDENTIFICACIÓN</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
